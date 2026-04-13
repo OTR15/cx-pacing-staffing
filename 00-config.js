@@ -93,13 +93,15 @@ const CFG = {
   ], 
 
   staffing: {
-    sheetName: 'Staffing',
-    ticketsPerProductiveHour: 8,
-    agedRiskWeight: 1.5,
-    reserveHoursBuffer: 6,
-    minimumAgentsFloor: 4,
-    cautionUnassignedThreshold: 10
-  }
+  sheetName: 'Staffing',
+  ticketsPerProductiveHour: 8,
+  agedRiskWeight: 1.5,
+  reserveHoursBuffer: 6,
+  minimumAgentsFloor: 4,
+  cautionUnassignedThreshold: 10,
+  estimatedWorkableTicketsPerHour: 40,
+  endOfDayHour: 18
+}
 };
 
 // =============================================================================

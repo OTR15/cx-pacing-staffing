@@ -12,7 +12,9 @@
  *   agedRiskWeight: number,
  *   reserveHoursBuffer: number,
  *   minimumAgentsFloor: number,
- *   cautionUnassignedThreshold: number
+ *   cautionUnassignedThreshold: number,
+ *   estimatedWorkableTicketsPerHour: number,
+ *   endOfDayHour: number
  * }}
  */
 function getStaffingAssumptions_() {
@@ -42,8 +44,35 @@ function getStaffingAssumptions_() {
     cautionUnassignedThreshold: Number(getConfigValue_(
       'STAFFING_CAUTION_UNASSIGNED_THRESHOLD',
       defaults.cautionUnassignedThreshold
-    )) || defaults.cautionUnassignedThreshold
+    )) || defaults.cautionUnassignedThreshold,
+
+    estimatedWorkableTicketsPerHour: Number(getConfigValue_(
+      'STAFFING_ESTIMATED_WORKABLE_TICKETS_PER_HOUR',
+      defaults.estimatedWorkableTicketsPerHour || 40
+    )) || defaults.estimatedWorkableTicketsPerHour || 40,
+
+    endOfDayHour: Number(getConfigValue_(
+      'STAFFING_END_OF_DAY_HOUR',
+      defaults.endOfDayHour || 18
+    )) || defaults.endOfDayHour || 18
   };
+}
+
+/**
+ * Estimates remaining inflow from a checkpoint to the configured end of day.
+ *
+ * @param {{ hour: number, minute: number }} checkpoint
+ * @returns {number}
+ */
+function estimateRemainingInflow_(checkpoint) {
+  const assumptions = getStaffingAssumptions_();
+  const checkpointMinutes =
+    (Number(checkpoint.hour || 0) * 60) + Number(checkpoint.minute || 0);
+  const endMinutes = Number(assumptions.endOfDayHour || 0) * 60;
+
+  const hoursRemaining = Math.max(0, (endMinutes - checkpointMinutes) / 60);
+
+  return Number(assumptions.estimatedWorkableTicketsPerHour || 0) * hoursRemaining;
 }
 
 /**
@@ -255,8 +284,8 @@ function getRemainingShiftHoursForScheduleAtCheckpoint_(dateObj, checkpoint, sch
 
 /**
  * Returns active staffing coverage at a checkpoint for the roster.
- * First-pass version treats remaining effective hours as equal to remaining
- * shift hours.
+ * First-pass version applies a simple lunch deduction for longer shifts by
+ * scaling remaining effective hours down proportionally.
  *
  * @param {Date} dateObj
  * @param {{ hour: number, minute: number }} checkpoint
@@ -290,7 +319,13 @@ function getCheckpointActiveCoverage_(dateObj, checkpoint, roster, scheduleMap, 
 
     if (remainingShiftHours <= 0) return;
 
-    const remainingEffectiveHours = remainingShiftHours;
+    const scheduledHours = Number(schedule.hours || 0);
+    const effectiveShiftHours =
+      scheduledHours >= 9 ? Math.max(0, scheduledHours - 1) : scheduledHours;
+
+    const remainingEffectiveHours = scheduledHours > 0
+      ? Math.max(0, remainingShiftHours * (effectiveShiftHours / scheduledHours))
+      : Math.max(0, remainingShiftHours);
 
     activeReps.push({
       agentId: rep.agentId,
@@ -353,7 +388,10 @@ function buildCheckpointStaffingRow_(dateObj, checkpoint, context) {
   const totalOpen = Number(pulseInput.totalOpen || 0);
   const unassigned = Number(pulseInput.unassigned || 0);
   const agedRisk = Number(pulseInput.agedRisk || 0);
-  const estimatedInflow = Number(pulseInput.estimatedInflow || 0);
+  const manualEstimatedInflow = Number(pulseInput.estimatedInflow || 0);
+  const estimatedInflow = manualEstimatedInflow > 0
+    ? manualEstimatedInflow
+    : estimateRemainingInflow_(checkpoint);
 
   // Stubbed for first pass; replace with schedule-driven coverage logic later.
   const coverage = getCheckpointActiveCoverage_(
