@@ -218,6 +218,33 @@ function getCheckpointTimestampText_(dateObj, checkpoint) {
 }
 
 /**
+ * Returns remaining shift hours from a checkpoint time to shift end.
+ * First-pass version handles same-day shifts only.
+ *
+ * @param {Date} dateObj
+ * @param {{ hour: number, minute: number }} checkpoint
+ * @param {{ startText: string, endText: string }} schedule
+ * @returns {number}
+ */
+function getRemainingShiftHoursForScheduleAtCheckpoint_(dateObj, checkpoint, schedule) {
+  const startText = String((schedule || {}).startText || '').trim();
+  const endText = String((schedule || {}).endText || '').trim();
+
+  if (!startText || !endText) return 0;
+
+  const checkpointMinutes = (Number(checkpoint.hour || 0) * 60) + Number(checkpoint.minute || 0);
+  const startMinutes = parseTimeToMinutes_(startText);
+  const endMinutes = parseTimeToMinutes_(endText);
+
+  if (isNaN(startMinutes) || isNaN(endMinutes)) return 0;
+  if (endMinutes <= startMinutes) return 0;
+  if (checkpointMinutes >= endMinutes) return 0;
+
+  const effectiveStart = checkpointMinutes <= startMinutes ? startMinutes : checkpointMinutes;
+  return (endMinutes - effectiveStart) / 60;
+}
+
+/**
  * Builds a single checkpoint staffing row.
  *
  * @param {Date} dateObj
@@ -348,6 +375,73 @@ function buildStaffingModelForDate_(dateObj) {
     pulseInputs: inputs.pulseInputs,
     rows
   };
+}
+
+/**
+ * Returns pulse inputs for a date, keyed by checkpoint.
+ * First-pass stub: defaults all checkpoint values to 0.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {Date} dateObj
+ * @returns {{ byCheckpointKey: Object<string, {
+*   totalOpen: number,
+*   unassigned: number,
+*   agedRisk: number,
+*   estimatedInflow: number
+* }>}}
+*/
+function getPulseInputsForDate_(sheet, dateObj) {
+ const byCheckpointKey = {};
+
+ CFG.checkpoints.forEach(checkpoint => {
+   byCheckpointKey[checkpoint.key] = {
+     totalOpen: 0,
+     unassigned: 0,
+     agedRisk: 0,
+     estimatedInflow: 0
+   };
+ });
+
+ return { byCheckpointKey };
+}
+
+/**
+ * Loads all staffing inputs needed to build the model for a date.
+ * First-pass version uses stubbed pulse inputs.
+ *
+ * @param {Date} dateObj
+ * @returns {{
+*   dateObj: Date,
+*   dateLabel: string,
+*   roster: Array,
+*   scheduleMap: Object,
+*   assumptions: Object,
+*   pulseInputs: Object
+* }}
+*/
+function getStaffingInputsForDate_(dateObj) {
+ const dateLabel = formatDailySheetName_(dateObj);
+ const roster = getDisplayRoster_();
+ const scheduleMap = getScheduleMapForDate_(dateObj);
+ const assumptions = getStaffingAssumptions_();
+
+ let staffingSheet;
+ try {
+   staffingSheet = getOrCreateStaffingSheet_();
+ } catch (e) {
+   staffingSheet = null;
+ }
+
+ const pulseInputs = getPulseInputsForDate_(staffingSheet, dateObj);
+
+ return {
+   dateObj,
+   dateLabel,
+   roster,
+   scheduleMap,
+   assumptions,
+   pulseInputs
+ };
 }
 
 function testBuildStaffingModel() {
