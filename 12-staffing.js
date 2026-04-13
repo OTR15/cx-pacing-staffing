@@ -74,3 +74,15 @@ function computeProjectedWorkRemaining_(pulseInput) {
 
  return (totalOpen + weightedAgedRisk + estimatedInflow) / tph;
 }
+
+/**
+ * Returns projected capacity remaining in productive hours.
+ * Input is already in hours, so no conversion is applied.
+ *
+ * @param {number} remainingProductiveHours
+ * @returns {number}
+ */
+function computeProjectedCapacityRemaining_(remainingProductiveHours) {
+ const hours = Number(remainingProductiveHours);
+ return isNaN(hours) ? 0 : hours;
+}
