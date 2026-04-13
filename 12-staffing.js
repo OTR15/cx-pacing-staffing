@@ -179,24 +179,33 @@ function getRecommendationStatus_(recommendedSendHomeCount, excessCapacity, unas
  * @returns {string}
  */
 function buildRecommendationExplanation_(row) {
- const capacity = Number((row || {}).projectedCapacityRemaining || 0);
- const work = Number((row || {}).projectedWorkRemaining || 0);
- const excess = Number((row || {}).excessCapacity || 0);
- const unassigned = Number((row || {}).unassigned || 0);
- const sendHomeCount = Number((row || {}).recommendedSendHomeCount || 0);
+  const capacity = Number((row || {}).projectedCapacityRemaining || 0);
+  const work = Number((row || {}).projectedWorkRemaining || 0);
+  const excess = Number((row || {}).excessCapacity || 0);
+  const unassigned = Number((row || {}).unassigned || 0);
+  const sendHomeCount = Number((row || {}).recommendedSendHomeCount || 0);
+  const status = String((row || {}).recommendationStatus || '');
 
- const parts = [
-   'Capacity ' + round1_(capacity) + 'h vs work ' + round1_(work) + 'h',
-   'excess ' + round1_(excess) + 'h'
- ];
+  const parts = [
+    'Capacity ' + round1_(capacity) + 'h vs work ' + round1_(work) + 'h',
+    'excess ' + round1_(excess) + 'h'
+  ];
 
- if (unassigned > 0) {
-   parts.push('unassigned=' + unassigned);
- }
+  if (unassigned > 0) {
+    parts.push('unassigned=' + unassigned);
+  }
 
- parts.push(sendHomeCount >= 1 ? 'Send ' + sendHomeCount : 'Hold');
+  if (status === 'SEND' && sendHomeCount >= 1) {
+    parts.push('Send ' + sendHomeCount);
+  } else if (status === 'BLOCK') {
+    parts.push('Block');
+  } else if (status === 'CAUTION') {
+    parts.push('Caution');
+  } else {
+    parts.push('Hold');
+  }
 
- return parts.join(' | ');
+  return parts.join(' | ');
 }
 
 /**
@@ -296,6 +305,17 @@ function getCheckpointActiveCoverage_(dateObj, checkpoint, roster, scheduleMap, 
     activeAgentCount: activeReps.length,
     activeReps
   };
+  
+}
+
+function getRemainingProductiveHoursAtCheckpoint_(activeCoverage) {
+  const activeReps = ((activeCoverage || {}).activeReps) || [];
+  if (!activeReps.length) return 0;
+
+  return activeReps.reduce((sum, rep) => {
+    const hours = Number((rep || {}).remainingEffectiveHours);
+    return sum + (isNaN(hours) ? 0 : hours);
+  }, 0);
 }
 
 /**
@@ -330,15 +350,24 @@ function getCheckpointActiveCoverage_(dateObj, checkpoint, roster, scheduleMap, 
 function buildCheckpointStaffingRow_(dateObj, checkpoint, context) {
   const pulseInputs = ((context || {}).pulseInputs || {}).byCheckpointKey || {};
   const pulseInput = pulseInputs[checkpoint.key] || {};
-
   const totalOpen = Number(pulseInput.totalOpen || 0);
   const unassigned = Number(pulseInput.unassigned || 0);
   const agedRisk = Number(pulseInput.agedRisk || 0);
   const estimatedInflow = Number(pulseInput.estimatedInflow || 0);
 
   // Stubbed for first pass; replace with schedule-driven coverage logic later.
-  const activeAgentCount = 0;
-  const remainingProductiveHours = 0;
+  const coverage = getCheckpointActiveCoverage_(
+    dateObj,
+    checkpoint,
+    context.roster,
+    context.scheduleMap,
+    context.assumptions
+  );
+  
+  const activeAgentCount = coverage.activeAgentCount;
+  
+  const remainingProductiveHours =
+    getRemainingProductiveHoursAtCheckpoint_(coverage);
 
   const projectedWorkRemaining = computeProjectedWorkRemaining_({
     totalOpen,
@@ -432,8 +461,35 @@ function buildStaffingModelForDate_(dateObj) {
 }
 
 /**
+ * Normalizes checkpoint keys from sheet input values.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+function normalizeCheckpointKey_(value) {
+  const text = String(value || '').trim().toUpperCase();
+
+  const map = {
+    '7AM': '7AM',
+    '7:00 AM': '7AM',
+    '9AM': '9AM',
+    '9:00 AM': '9AM',
+    '11AM': '11AM',
+    '11:00 AM': '11AM',
+    '2PM': '2PM',
+    '2:00 PM': '2PM',
+    '6PM': '6PM',
+    '6:00 PM': '6PM',
+    'EOD': 'EOD'
+  };
+
+  return map[text] || text;
+}
+
+/**
  * Returns pulse inputs for a date, keyed by checkpoint.
- * First-pass stub: defaults all checkpoint values to 0.
+ * Reads the input block starting at row 5:
+ *   Checkpoint | totalOpen | unassigned | agedRisk | estimatedInflow
  *
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {Date} dateObj
@@ -445,18 +501,33 @@ function buildStaffingModelForDate_(dateObj) {
 * }>}}
 */
 function getPulseInputsForDate_(sheet, dateObj) {
- const byCheckpointKey = {};
+  const byCheckpointKey = {};
 
- CFG.checkpoints.forEach(checkpoint => {
-   byCheckpointKey[checkpoint.key] = {
-     totalOpen: 0,
-     unassigned: 0,
-     agedRisk: 0,
-     estimatedInflow: 0
-   };
- });
+  CFG.checkpoints.forEach(checkpoint => {
+    byCheckpointKey[checkpoint.key] = {
+      totalOpen: 0,
+      unassigned: 0,
+      agedRisk: 0,
+      estimatedInflow: 0
+    };
+  });
 
- return { byCheckpointKey };
+  if (!sheet) return { byCheckpointKey };
+
+  const values = sheet.getRange(5, 1, 6, 5).getDisplayValues();
+
+  values.forEach(row => {
+    const checkpointKey = normalizeCheckpointKey_(row[0]);
+    if (!checkpointKey || !byCheckpointKey[checkpointKey]) return;
+
+    byCheckpointKey[checkpointKey] = {
+      totalOpen: Number(row[1]) || 0,
+      unassigned: Number(row[2]) || 0,
+      agedRisk: Number(row[3]) || 0,
+      estimatedInflow: Number(row[4]) || 0
+    };
+  });
+  return { byCheckpointKey };
 }
 
 /**
@@ -502,4 +573,143 @@ function testBuildStaffingModel() {
   const dateObj = new Date();
   const model = buildStaffingModelForDate_(dateObj);
   Logger.log(JSON.stringify(model, null, 2));
+}
+
+/**
+ * Writes the staffing recommendation output table.
+ * Uses a fixed output block so a future manual input section can live above it.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {Array<Object>} rows
+ */
+function writeStaffingRecommendationTable_(sheet, rows) {
+  const outputStartRow = 14;
+  const headers = [[
+    'Checkpoint Key',
+    'Checkpoint Label',
+    'Timestamp',
+    'totalOpen',
+    'unassigned',
+    'agedRisk',
+    'estimatedInflow',
+    'Active Agents',
+    'Remaining Productive Hours',
+    'Projected Work Remaining',
+    'Projected Capacity Remaining',
+    'Excess Capacity',
+    'Recommended Send Home',
+    'Status',
+    'Explanation'
+  ]];
+
+  const values = (rows || []).map(row => [
+    row.checkpointKey,
+    row.checkpointLabel,
+    row.checkpointTimestamp,
+    row.totalOpen,
+    row.unassigned,
+    row.agedRisk,
+    row.estimatedInflow,
+    row.activeAgentCount,
+    row.remainingProductiveHours,
+    row.projectedWorkRemaining,
+    row.projectedCapacityRemaining,
+    row.excessCapacity,
+    row.recommendedSendHomeCount,
+    row.recommendationStatus,
+    row.explanation
+  ]);
+
+  const totalRows = Math.max(sheet.getMaxRows() - outputStartRow + 1, 1);
+  const outputRange = sheet.getRange(outputStartRow, 1, totalRows, headers[0].length);
+
+  outputRange.clearContent();
+  outputRange.clearFormat();
+
+  sheet.getRange(outputStartRow, 1, 1, headers[0].length)
+    .setValues(headers)
+    .setFontWeight('bold');
+
+  if (values.length) {
+    sheet.getRange(outputStartRow + 1, 1, values.length, headers[0].length)
+      .setValues(values);
+  }
+}
+
+/**
+ * Returns the Staffing sheet, creating it if needed.
+ *
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet}
+ */
+function getOrCreateStaffingSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  const sheetName = getConfigValue_('STAFFING_SHEET_NAME', CFG.staffing.sheetName);
+  return getOrCreateSheet_(ss, sheetName);
+}
+
+/**
+ * Writes the manual staffing input section in rows 1–10.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {{ dateLabel: string, pulseInputs: Object }} model
+ */
+function writeStaffingInputSection_(sheet, model) {
+  const pulseInputs = ((model || {}).pulseInputs || {}).byCheckpointKey || {};
+  const existingValues = sheet.getRange(5, 1, 6, 5).getValues();
+
+  sheet.getRange(1, 1).setValue('Date');
+  sheet.getRange(1, 2).setValue((model || {}).dateLabel || '');
+
+  sheet.getRange(3, 1, 1, 5).setValues([[
+    'Checkpoint Key',
+    'totalOpen',
+    'unassigned',
+    'agedRisk',
+    'estimatedInflow'
+  ]]).setFontWeight('bold');
+
+  sheet.getRange(5, 1, 6, 1).setNumberFormat('@');
+
+  CFG.checkpoints.forEach((checkpoint, i) => {
+    const rowIndex = i + 5;
+    const existingRow = existingValues[i] || [];
+    const defaults = pulseInputs[checkpoint.key] || {};
+
+    sheet.getRange(rowIndex, 1).setValue(checkpoint.key);
+    sheet.getRange(rowIndex, 2, 1, 4).setValues([[
+      isNaN(Number(existingRow[1])) ? Number(defaults.totalOpen || 0) : Number(existingRow[1]),
+      isNaN(Number(existingRow[2])) ? Number(defaults.unassigned || 0) : Number(existingRow[2]),
+      isNaN(Number(existingRow[3])) ? Number(defaults.agedRisk || 0) : Number(existingRow[3]),
+      isNaN(Number(existingRow[4])) ? Number(defaults.estimatedInflow || 0) : Number(existingRow[4])
+    ]]);
+  });
+}
+
+/**
+ * Writes the staffing sheet for the current model.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {{ dateLabel: string, pulseInputs: Object, rows: Array<Object> }} model
+ */
+function writeStaffingSheet_(sheet, model) {
+  writeStaffingInputSection_(sheet, model);
+  writeStaffingRecommendationTable_(sheet, (model || {}).rows || []);
+}
+
+/**
+ * Builds and publishes staffing output for a given date.
+ *
+ * @param {Date} dateObj
+ */
+function publishStaffingForDate_(dateObj) {
+  const sheet = getOrCreateStaffingSheet_();
+  const model = buildStaffingModelForDate_(dateObj);
+  writeStaffingSheet_(sheet, model);
+}
+
+/**
+ * Publishes staffing output for today.
+ */
+function publishTodayStaffing() {
+  publishStaffingForDate_(new Date());
 }
