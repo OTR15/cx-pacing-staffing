@@ -165,3 +165,54 @@ function getRecommendationStatus_(recommendedSendHomeCount, excessCapacity, unas
  if (safeSendHomeCount >= 1) return 'SEND';
  return 'HOLD';
 }
+
+/**
+ * Returns a short human-readable explanation for a staffing recommendation.
+ *
+ * @param {{
+ *   projectedCapacityRemaining: number,
+ *   projectedWorkRemaining: number,
+ *   excessCapacity: number,
+ *   unassigned: number,
+ *   recommendedSendHomeCount: number
+ * }} row
+ * @returns {string}
+ */
+function buildRecommendationExplanation_(row) {
+ const capacity = Number((row || {}).projectedCapacityRemaining || 0);
+ const work = Number((row || {}).projectedWorkRemaining || 0);
+ const excess = Number((row || {}).excessCapacity || 0);
+ const unassigned = Number((row || {}).unassigned || 0);
+ const sendHomeCount = Number((row || {}).recommendedSendHomeCount || 0);
+
+ const parts = [
+   'Capacity ' + round1_(capacity) + 'h vs work ' + round1_(work) + 'h',
+   'excess ' + round1_(excess) + 'h'
+ ];
+
+ if (unassigned > 0) {
+   parts.push('unassigned=' + unassigned);
+ }
+
+ parts.push(sendHomeCount >= 1 ? 'Send ' + sendHomeCount : 'Hold');
+
+ return parts.join(' | ');
+}
+
+/**
+ * Returns a formatted checkpoint timestamp in the project timezone.
+ *
+ * @param {Date} dateObj
+ * @param {{ hour: number, minute: number }} checkpoint
+ * @returns {string}
+ */
+function getCheckpointTimestampText_(dateObj, checkpoint) {
+  const d = new Date(dateObj);
+
+  d.setHours(checkpoint.hour);
+  d.setMinutes(checkpoint.minute || 0);
+  d.setSeconds(0);
+  d.setMilliseconds(0);
+
+  return Utilities.formatDate(d, CFG.timezone, 'M/d/yy h:mm a');
+}
