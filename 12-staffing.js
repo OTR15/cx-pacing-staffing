@@ -349,3 +349,9 @@ function buildStaffingModelForDate_(dateObj) {
     rows
   };
 }
+
+function testBuildStaffingModel() {
+  const dateObj = new Date();
+  const model = buildStaffingModelForDate_(dateObj);
+  Logger.log(JSON.stringify(model, null, 2));
+}
