@@ -245,6 +245,60 @@ function getRemainingShiftHoursForScheduleAtCheckpoint_(dateObj, checkpoint, sch
 }
 
 /**
+ * Returns active staffing coverage at a checkpoint for the roster.
+ * First-pass version treats remaining effective hours as equal to remaining
+ * shift hours.
+ *
+ * @param {Date} dateObj
+ * @param {{ hour: number, minute: number }} checkpoint
+ * @param {Array<{ agentId: number, repName: string }>} roster
+ * @param {Object} scheduleMap
+ * @param {Object} assumptions
+ * @returns {{
+ *   activeAgentCount: number,
+ *   activeReps: Array<{
+ *     agentId: number,
+ *     repName: string,
+ *     schedule: Object,
+ *     remainingShiftHours: number,
+ *     remainingEffectiveHours: number
+ *   }>
+ * }}
+ */
+function getCheckpointActiveCoverage_(dateObj, checkpoint, roster, scheduleMap, assumptions) {
+  const activeReps = [];
+
+  (roster || []).forEach(rep => {
+    const schedule = getScheduleForRep_(scheduleMap, rep.repName);
+    if (!schedule) return;
+    if (['CTO', 'VTO', 'Off'].includes(schedule.status)) return;
+
+    const remainingShiftHours = getRemainingShiftHoursForScheduleAtCheckpoint_(
+      dateObj,
+      checkpoint,
+      schedule
+    );
+
+    if (remainingShiftHours <= 0) return;
+
+    const remainingEffectiveHours = remainingShiftHours;
+
+    activeReps.push({
+      agentId: rep.agentId,
+      repName: rep.repName,
+      schedule,
+      remainingShiftHours,
+      remainingEffectiveHours
+    });
+  });
+
+  return {
+    activeAgentCount: activeReps.length,
+    activeReps
+  };
+}
+
+/**
  * Builds a single checkpoint staffing row.
  *
  * @param {Date} dateObj
