@@ -100,3 +100,38 @@ function computeExcessCapacity_(projectedCapacityRemaining, projectedWorkRemaini
 
  return (isNaN(capacity) ? 0 : capacity) - (isNaN(work) ? 0 : work);
 }
+
+/**
+ * Returns the recommended number of agents that can be sent home safely.
+ *
+ * @param {number} excessCapacity
+ * @param {number} activeAgentCount
+ * @param {number} remainingProductiveHours
+ * @returns {number}
+ */
+function computeRecommendedSendHomeCount_(excessCapacity, activeAgentCount, remainingProductiveHours) {
+ const assumptions = getStaffingAssumptions_();
+ const excess = Number(excessCapacity);
+ const active = Number(activeAgentCount);
+ const hours = Number(remainingProductiveHours);
+
+ const safeExcess = isNaN(excess) ? 0 : excess;
+ const safeActive = isNaN(active) ? 0 : active;
+ const safeHours = isNaN(hours) ? 0 : hours;
+ const minimumAgentsFloor = Number(assumptions.minimumAgentsFloor || 0);
+ const reserveHoursBuffer = Number(assumptions.reserveHoursBuffer || 0);
+
+ if (safeActive <= 0) return 0;
+ if (safeActive <= minimumAgentsFloor) return 0;
+
+ const avgRemainingHoursPerAgent = safeHours / safeActive;
+ if (avgRemainingHoursPerAgent <= 0) return 0;
+
+ const sendableHours = safeExcess - reserveHoursBuffer;
+ if (sendableHours <= 0) return 0;
+
+ const rawSendHome = Math.floor(sendableHours / avgRemainingHoursPerAgent);
+ const maxAllowed = safeActive - minimumAgentsFloor;
+
+ return Math.max(0, Math.min(rawSendHome, maxAllowed));
+}
