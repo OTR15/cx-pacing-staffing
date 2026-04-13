@@ -161,7 +161,7 @@ function getRecommendationStatus_(recommendedSendHomeCount, excessCapacity, unas
 
  if (safeExcess < 0) return 'BLOCK';
  if (safeActive <= minimumAgentsFloor) return 'BLOCK';
- if (safeSendHomeCount >= 1) return 'SEND';
  if (safeUnassignedCount > cautionUnassignedThreshold) return 'CAUTION';
+ if (safeSendHomeCount >= 1) return 'SEND';
  return 'HOLD';
 }
