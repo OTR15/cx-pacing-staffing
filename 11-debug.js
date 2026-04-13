@@ -10,3 +10,9 @@ function testStaffingAssumptions_() {
     Logger.log(computeProjectedCapacityRemaining_('bad'));  // 0
   }
   function testcapacity() {testCapacity_}
+
+function testBuildStaffingModel() {
+  const dateObj = new Date();
+  const model = buildStaffingModelForDate_(dateObj);
+  Logger.log(JSON.stringify(model, null, 2));
+}

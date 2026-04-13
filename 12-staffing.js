@@ -216,3 +216,136 @@ function getCheckpointTimestampText_(dateObj, checkpoint) {
 
   return Utilities.formatDate(d, CFG.timezone, 'M/d/yy h:mm a');
 }
+
+/**
+ * Builds a single checkpoint staffing row.
+ *
+ * @param {Date} dateObj
+ * @param {{ key: string, label: string, hour: number, minute: number }} checkpoint
+ * @param {{
+ *   pulseInputs: Object,
+ *   roster: Array,
+ *   scheduleMap: Object,
+ *   assumptions: Object
+ * }} context
+ * @returns {{
+ *   checkpointKey: string,
+ *   checkpointLabel: string,
+ *   checkpointTimestamp: string,
+ *   totalOpen: number,
+ *   unassigned: number,
+ *   agedRisk: number,
+ *   estimatedInflow: number,
+ *   activeAgentCount: number,
+ *   remainingProductiveHours: number,
+ *   projectedWorkRemaining: number,
+ *   projectedCapacityRemaining: number,
+ *   excessCapacity: number,
+ *   recommendedSendHomeCount: number,
+ *   recommendationStatus: string,
+ *   explanation: string
+ * }}
+ */
+function buildCheckpointStaffingRow_(dateObj, checkpoint, context) {
+  const pulseInputs = ((context || {}).pulseInputs || {}).byCheckpointKey || {};
+  const pulseInput = pulseInputs[checkpoint.key] || {};
+
+  const totalOpen = Number(pulseInput.totalOpen || 0);
+  const unassigned = Number(pulseInput.unassigned || 0);
+  const agedRisk = Number(pulseInput.agedRisk || 0);
+  const estimatedInflow = Number(pulseInput.estimatedInflow || 0);
+
+  // Stubbed for first pass; replace with schedule-driven coverage logic later.
+  const activeAgentCount = 0;
+  const remainingProductiveHours = 0;
+
+  const projectedWorkRemaining = computeProjectedWorkRemaining_({
+    totalOpen,
+    agedRisk,
+    estimatedInflow
+  });
+
+  const projectedCapacityRemaining =
+    computeProjectedCapacityRemaining_(remainingProductiveHours);
+
+  const excessCapacity = computeExcessCapacity_(
+    projectedCapacityRemaining,
+    projectedWorkRemaining
+  );
+
+  const recommendedSendHomeCount = computeRecommendedSendHomeCount_(
+    excessCapacity,
+    activeAgentCount,
+    remainingProductiveHours
+  );
+
+  const recommendationStatus = getRecommendationStatus_(
+    recommendedSendHomeCount,
+    excessCapacity,
+    unassigned,
+    activeAgentCount
+  );
+
+  const row = {
+    checkpointKey: checkpoint.key,
+    checkpointLabel: checkpoint.label,
+    checkpointTimestamp: getCheckpointTimestampText_(dateObj, checkpoint),
+
+    totalOpen,
+    unassigned,
+    agedRisk,
+    estimatedInflow,
+
+    activeAgentCount,
+    remainingProductiveHours,
+
+    projectedWorkRemaining,
+    projectedCapacityRemaining,
+    excessCapacity,
+
+    recommendedSendHomeCount,
+    recommendationStatus,
+    explanation: ''
+  };
+
+  row.explanation = buildRecommendationExplanation_(row);
+  return row;
+}
+
+/**
+ * Builds staffing rows for all configured checkpoints on a date.
+ *
+ * @param {Date} dateObj
+ * @param {Object} inputs
+ * @returns {Array<Object>}
+ */
+function buildCheckpointStaffingRows_(dateObj, inputs) {
+  return CFG.checkpoints.map(checkpoint => {
+    return buildCheckpointStaffingRow_(dateObj, checkpoint, inputs);
+  });
+}
+
+/**
+ * Builds the staffing model for a given date.
+ *
+ * @param {Date} dateObj
+ * @returns {{
+ *   dateObj: Date,
+ *   dateLabel: string,
+ *   assumptions: Object,
+ *   pulseInputs: Object,
+ *   rows: Array<Object>
+ * }}
+ */
+function buildStaffingModelForDate_(dateObj) {
+  const inputs = getStaffingInputsForDate_(dateObj);
+  const rows = buildCheckpointStaffingRows_(dateObj, inputs);
+
+  return {
+    dateObj,
+    dateLabel: inputs.dateLabel,
+    assumptions: inputs.assumptions,
+    pulseInputs: inputs.pulseInputs,
+    rows
+  };
+}
