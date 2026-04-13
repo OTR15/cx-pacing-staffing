@@ -18,6 +18,8 @@ const CFG = {
   normalizedScheduleSheetName: 'Schedule_Normalized',
   teamGuideSheetName: 'Team Guide',
 
+  
+
   // ── Schedule layout (1-based column/row positions) ─────────────────────────
   schedule: {
     headerRow1: 1,
@@ -27,6 +29,8 @@ const CFG = {
     managerCol: 3,
     firstDateCol: 4
   },
+
+  
 
   // ── Weekly report settings ─────────────────────────────────────────────────
   weekly: {
@@ -86,7 +90,16 @@ const CFG = {
     'Fraser',
     'Isaac',
     'Quint Test'
-  ]
+  ], 
+
+  staffing: {
+    sheetName: 'Staffing',
+    ticketsPerProductiveHour: 8,
+    agedRiskWeight: 1.5,
+    reserveHoursBuffer: 6,
+    minimumAgentsFloor: 4,
+    cautionUnassignedThreshold: 10
+  }
 };
 
 // =============================================================================
