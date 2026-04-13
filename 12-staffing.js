@@ -86,3 +86,17 @@ function computeProjectedCapacityRemaining_(remainingProductiveHours) {
  const hours = Number(remainingProductiveHours);
  return isNaN(hours) ? 0 : hours;
 }
+
+/**
+ * Returns excess capacity in productive hours.
+ *
+ * @param {number} projectedCapacityRemaining
+ * @param {number} projectedWorkRemaining
+ * @returns {number}
+ */
+function computeExcessCapacity_(projectedCapacityRemaining, projectedWorkRemaining) {
+ const capacity = Number(projectedCapacityRemaining);
+ const work = Number(projectedWorkRemaining);
+
+ return (isNaN(capacity) ? 0 : capacity) - (isNaN(work) ? 0 : work);
+}
