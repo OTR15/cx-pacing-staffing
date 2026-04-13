@@ -135,3 +135,33 @@ function computeRecommendedSendHomeCount_(excessCapacity, activeAgentCount, rema
 
  return Math.max(0, Math.min(rawSendHome, maxAllowed));
 }
+
+/**
+ * Returns the recommendation status for a checkpoint staffing row.
+ *
+ * @param {number} recommendedSendHomeCount
+ * @param {number} excessCapacity
+ * @param {number} unassigned
+ * @param {number} activeAgentCount
+ * @returns {'BLOCK'|'HOLD'|'CAUTION'|'SEND'}
+ */
+function getRecommendationStatus_(recommendedSendHomeCount, excessCapacity, unassigned, activeAgentCount) {
+ const assumptions = getStaffingAssumptions_();
+ const sendHomeCount = Number(recommendedSendHomeCount);
+ const excess = Number(excessCapacity);
+ const unassignedCount = Number(unassigned);
+ const active = Number(activeAgentCount);
+
+ const safeSendHomeCount = isNaN(sendHomeCount) ? 0 : sendHomeCount;
+ const safeExcess = isNaN(excess) ? 0 : excess;
+ const safeUnassignedCount = isNaN(unassignedCount) ? 0 : unassignedCount;
+ const safeActive = isNaN(active) ? 0 : active;
+ const minimumAgentsFloor = Number(assumptions.minimumAgentsFloor || 0);
+ const cautionUnassignedThreshold = Number(assumptions.cautionUnassignedThreshold || 0);
+
+ if (safeExcess < 0) return 'BLOCK';
+ if (safeActive <= minimumAgentsFloor) return 'BLOCK';
+ if (safeSendHomeCount >= 1) return 'SEND';
+ if (safeUnassignedCount > cautionUnassignedThreshold) return 'CAUTION';
+ return 'HOLD';
+}
