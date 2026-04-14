@@ -18,8 +18,6 @@ const CFG = {
   normalizedScheduleSheetName: 'Schedule_Normalized',
   teamGuideSheetName: 'Team Guide',
 
-  
-
   // ── Schedule layout (1-based column/row positions) ─────────────────────────
   schedule: {
     headerRow1: 1,
@@ -29,8 +27,6 @@ const CFG = {
     managerCol: 3,
     firstDateCol: 4
   },
-
-  
 
   // ── Weekly report settings ─────────────────────────────────────────────────
   weekly: {
@@ -67,7 +63,7 @@ const CFG = {
   ],
 
   // ── Admin / utility sheets to hide from normal users ──────────────────────
-  hiddenSheetNames: ['Config', 'Roster', 'Goals', 'Schedule_Normalized'],
+  hiddenSheetNames: ['Config', 'Roster', 'Goals', 'Schedule_Normalized', 'Schedule'],
 
   // ── Agents to exclude from pacing reports (bots, test accounts, etc.) ──────
   excludedAgents: [
@@ -90,18 +86,7 @@ const CFG = {
     'Fraser',
     'Isaac',
     'Quint Test'
-  ], 
-
-  staffing: {
-  sheetName: 'Staffing',
-  ticketsPerProductiveHour: 8,
-  agedRiskWeight: 1.5,
-  reserveHoursBuffer: 9,
-  minimumAgentsFloor: 4,
-  cautionUnassignedThreshold: 10,
-  estimatedWorkableTicketsPerHour: 40,
-  endOfDayHour: 18
-}
+  ]
 };
 
 // =============================================================================

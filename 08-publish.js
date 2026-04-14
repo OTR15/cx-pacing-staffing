@@ -440,10 +440,15 @@ function isUnderperforming_(actual, goals) {
  */
 function applyGoalAdjustments() {
   const ss        = SpreadsheetApp.getActive();
-  const dateObj   = new Date();
-  const sheetName = formatDailySheetName_(dateObj);
-  const sheet     = ss.getSheetByName(sheetName);
-  if (!sheet) throw new Error('Today tab not found: ' + sheetName);
+  const sheet     = ss.getActiveSheet();
+  const sheetName = sheet.getName();
+
+  if (!parseDailySheetName_(sheetName)) {
+    SpreadsheetApp.getUi().alert('Please navigate to a daily tab before running Apply Goal Adjustments.');
+    return;
+  }
+
+  const dateObj = parseDailySheetName_(sheetName);
 
   const layout      = getLayout_();
   const eodSection  = layout.sections.find(s => s.key === 'EOD');
@@ -451,11 +456,22 @@ function applyGoalAdjustments() {
   const scheduleMap = getScheduleMapForDate_(dateObj);
   const goalsMap    = getGoalsMap_();
 
+  // Build a map of repName → row number from the sheet itself
+  // so we don't assume roster order matches sheet order
+  const lastRow    = sheet.getLastRow();
+  const nameValues = sheet.getRange(CFG.daily.firstDataRow, 1, lastRow - CFG.daily.firstDataRow + 1, 1).getValues();
+  const rowMap     = {};
+  nameValues.forEach((r, i) => {
+    const name = String(r[0] || '').trim();
+    if (name) rowMap[normalizeName_(name)] = CFG.daily.firstDataRow + i;
+  });
+
   let adjustedCount = 0;
 
   for (let i = 0; i < fullRoster.length; i++) {
-    const rep  = fullRoster[i];
-    const row  = CFG.daily.firstDataRow + i;
+    const rep = fullRoster[i];
+    const row = rowMap[normalizeName_(rep.repName)];
+    if (!row) continue; // rep not found in sheet
 
     const reason = String(sheet.getRange(row, layout.reviewReasonCol).getValue() || '').trim();
     const adjust = String(sheet.getRange(row, layout.reviewAdjustCol).getValue() || '').trim();
@@ -478,7 +494,10 @@ function applyGoalAdjustments() {
     }
 
     // ── Percentage adjustment: rescale goals and recompute ────────────────
-    const adjustPct = parseFloat(adjust) / 100;
+    // Sheets may auto-convert "100%" to 1, "75%" to 0.75, etc.
+    // Handle both decimal (<=1) and whole number (>1) formats.
+    const adjustRaw = Number(adjust);
+    const adjustPct = adjustRaw <= 1 ? adjustRaw : adjustRaw / 100;
     if (isNaN(adjustPct) || adjustPct <= 0) continue;
 
     const schedule      = getScheduleForRep_(scheduleMap, rep.repName);
@@ -524,8 +543,9 @@ function applyGoalAdjustments() {
     sheet.getRange(row, layout.progressStartCol + 3).setValue(eodMet);
 
     // Update the review flag to show it's been processed
+    const metLabel = eodMet === 'Yes' ? '✓ Reviewed: ' : '✗ Reviewed: ';
     sheet.getRange(row, layout.reviewFlagCol)
-      .setValue('Reviewed: ' + adjust + (reason ? ' / ' + reason : ''))
+      .setValue(metLabel + adjust + (reason ? ' / ' + reason : ''))
       .setBackground('#b7e1cd')
       .setFontColor('#000000')
       .setFontWeight('normal');
@@ -595,4 +615,27 @@ function backfillMarch31() {
   });
 
   SpreadsheetApp.getUi().alert('March 31 backfill complete: 11AM, 2PM, 6PM, EOD.');
+}
+
+function rebuildAndRepublishToday() {
+  const now  = new Date();
+  const hour = Number(Utilities.formatDate(now, CFG.timezone, 'H'));
+
+  const fired = CFG.checkpoints.filter(cp => cp.hour <= hour);
+  if (!fired.length) {
+    SpreadsheetApp.getUi().alert('No checkpoints have fired yet today.');
+    return;
+  }
+
+  createTodayTab();
+
+  fired.forEach((cp, i) => {
+    publishCheckpointForDate_(now, cp);
+    if (i < fired.length - 1) Utilities.sleep(3000);
+  });
+
+  SpreadsheetApp.getUi().alert(
+    'Today tab rebuilt and republished through ' +
+    fired[fired.length - 1].label + '.'
+  );
 }

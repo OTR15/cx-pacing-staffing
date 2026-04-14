@@ -244,7 +244,7 @@ function applyReviewValidation_(sheet, rowCount, layout) {
     .build();
 
   const adjustValidation = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['', 'Exempt', '25%', '50%', '65%', '75%', '90%', '100%'], true)
+    .requireValueInList(['', 'Exempt', '25', '50', '65', '75', '90', '100'], true)
     .build();
 
   sheet.getRange(CFG.daily.firstDataRow, layout.reviewReasonCol, rowCount, 1)

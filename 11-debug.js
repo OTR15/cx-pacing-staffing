@@ -41,3 +41,37 @@ function testStaffingAssumptions_() {
     );
   });
 }
+
+function debugGoalAdjustments() {
+  const ss        = SpreadsheetApp.getActive();
+  const sheet     = ss.getActiveSheet();
+  const sheetName = sheet.getName();
+
+  if (!parseDailySheetName_(sheetName)) {
+    SpreadsheetApp.getUi().alert('Please navigate to a daily tab before running this.');
+    return;
+  }
+
+  const layout  = getLayout_();
+  const lastRow = sheet.getLastRow();
+
+  Logger.log('reviewFlagCol: '   + layout.reviewFlagCol);
+  Logger.log('reviewReasonCol: ' + layout.reviewReasonCol);
+  Logger.log('reviewAdjustCol: ' + layout.reviewAdjustCol);
+
+  const nameValues = sheet.getRange(
+    CFG.daily.firstDataRow, 1,
+    lastRow - CFG.daily.firstDataRow + 1, 1
+  ).getValues();
+
+  nameValues.forEach((r, i) => {
+    const name   = String(r[0] || '').trim();
+    if (!name) return;
+    const row    = CFG.daily.firstDataRow + i;
+    const flag   = String(sheet.getRange(row, layout.reviewFlagCol).getValue()   || '').trim();
+    const reason = String(sheet.getRange(row, layout.reviewReasonCol).getValue() || '').trim();
+    const adjust = String(sheet.getRange(row, layout.reviewAdjustCol).getValue() || '').trim();
+
+    Logger.log(name + ' | row: ' + row + ' | flag: "' + flag + '" | reason: "' + reason + '" | adjust: "' + adjust + '"');
+  });
+}

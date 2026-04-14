@@ -7,25 +7,38 @@
 // ── Menu ──────────────────────────────────────────────────────────────────────
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Pacing Report')
-    .addItem('Setup: Seed Project',         'seedPrototypeSetup')
-    .addItem('Setup: Show Admin Tabs',      'unhideUtilitySheets')
-    .addItem('Setup: Hide Admin Tabs',      'hideUtilitySheetsMenu_')
-    .addItem('Help: Build Team Guide Tab',  'buildTeamGuideTab')
-    .addSeparator()
-    .addItem('Run: Normalize Schedule',           'normalizeCurrentWeekSchedule')
-    .addItem('Run: Build Today Tab',              'createTodayTab')
-    .addItem('Run: Publish Current Checkpoint',   'publishCurrentCheckpoint')
-    .addItem('Run: Apply Goal Adjustments',       'applyGoalAdjustments')
-    .addItem('Run: Publish Full Day Test',        'testFullDayTodaySlow')
-    .addSeparator()
-    .addItem('Automation: Install Daily Triggers', 'installTriggers')
-    .addItem('Automation: Remove Triggers',        'removePacingTriggers')
-    .addSeparator()
-    .addItem('Help: Setup Checklist',  'showSetupChecklist')
-    .addItem('Help: Daily Use Guide',  'showDailyUseGuide')
-    .addToUi();
+  const ui = SpreadsheetApp.getUi();
+  const menu = ui.createMenu('Pacing Report');
+
+  menu.addSubMenu(
+    ui.createMenu('Pacing Report')
+      .addItem('Publish Current Checkpoint',  'publishCurrentCheckpoint')
+      .addItem('Rebuild Current Day',         'rebuildAndRepublishToday')
+      .addItem('Apply Goal Adjustments',      'applyGoalAdjustments')
+  );
+
+  menu.addSubMenu(
+    ui.createMenu('Admin')
+      .addItem('Show Admin Tabs',             'unhideUtilitySheets')
+      .addItem('Hide Admin Tabs',             'hideUtilitySheetsMenu_')
+      .addSeparator()
+      .addItem('Install Daily Triggers',      'installTriggers')
+      .addItem('Remove Daily Triggers',       'removePacingTriggers')
+      .addSeparator()
+      .addItem('Set Next Schedule Tab',       'promptSetNextScheduleTab')
+      .addItem('Normalize Schedule',          'normalizeCurrentWeekSchedule')
+      .addSeparator()
+      .addItem('Organize Tabs',               'organizeTabs')
+  );
+
+  menu.addSubMenu(
+    ui.createMenu('Help')
+      .addItem('Daily Use Guide',             'showDailyUseGuide')
+      .addItem('Setup Checklist',             'showSetupChecklist')
+      .addItem('Build Team Guide Tab',        'buildTeamGuideTab')
+  );
+
+  menu.addToUi();
 }
 
 // ── Seed / first-run setup ────────────────────────────────────────────────────
@@ -194,7 +207,7 @@ function buildTeamGuideTab() {
     ['• Last 7 daily tabs stay visible; older daily tabs auto-hide'],
     [''],
     ['Daily Use'],
-    ['1. Open todays tab'],
+    ['1. Open today tab'],
     ['2. Review metric colors and On Track column'],
     ['3. If needed, use the Pacing Report menu to Normalize Schedule or Publish Current Checkpoint'],
     [''],
@@ -203,7 +216,7 @@ function buildTeamGuideTab() {
     ['Setup: Show Admin Tabs → unhides helper tabs'],
     ['Setup: Hide Admin Tabs → hides helper tabs'],
     ['Run: Normalize Schedule → refreshes machine-readable schedule data'],
-    ['Run: Build Today Tab → rebuilds todays tab'],
+    ['Run: Build Today Tab → rebuilds today tab'],
     ['Run: Publish Current Checkpoint → fills the current time block only'],
     ['Run: Publish Full Day Test → testing only, heavier API usage'],
     ['Automation: Install Daily Triggers → installs daily automation'],
@@ -250,17 +263,99 @@ function buildTeamGuideTab() {
     ['Once installed, most users do not need Apps Script access.'],
     [''],
     ['Troubleshooting'],
-    ['If todays tab is wrong:'],
+    ['If today tab is wrong:'],
     ['1. Run Normalize Schedule'],
     ['2. Run Build Today Tab'],
     ['3. Run Publish Current Checkpoint'],
     ['If metrics are blank, confirm script properties and Roster IDs.'],
-    ['If reps are missing or Off incorrectly, check the Schedule tab and todays date in row 2.']
+    ['If reps are missing or Off incorrectly, check the Schedule tab and today date in row 2.']
   ];
 
   sh.getRange(1, 1, rows.length, 1).setValues(rows);
   sh.setColumnWidth(1, 700);
   sh.getRange(1, 1).setFontSize(14).setFontWeight('bold');
+}
+
+// ── New menu functions ────────────────────────────────────────────────────────
+
+/**
+ * Prompts for the next week's schedule tab name and saves it to Config.
+ * Replaces the need to open the Config sheet manually.
+ */
+function promptSetNextScheduleTab() {
+  const ui       = SpreadsheetApp.getUi();
+  const current  = String(getConfigValue_('NEXT_SCHEDULE_TAB', '') || '').trim();
+  const response = ui.prompt(
+    'Set Next Schedule Tab',
+    'Enter the name of next week schedule tab:\n(current value: "' + (current || 'none') + '")',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const value = response.getResponseText().trim();
+  if (!value) {
+    ui.alert('No value entered — Config was not updated.');
+    return;
+  }
+
+  setConfigValue_('NEXT_SCHEDULE_TAB', value);
+  ui.alert('Next Schedule Tab set to: "' + value + '"');
+}
+
+/**
+ * Organizes all sheets into the preferred display order:
+ *   1. Team Guide
+ *   2. Daily tabs (newest first)
+ *   3. Weekly tabs (newest first)
+ *   4. Staffing tab
+ *   5. Admin/hidden tabs (Config, Roster, Goals, Schedule_Normalized, Schedule)
+ *
+ * Tabs not matching any category are placed before admin tabs.
+ */
+function organizeTabs() {
+  const ss     = SpreadsheetApp.getActive();
+  const sheets = ss.getSheets();
+
+  const adminNames   = ['Config', 'Roster', 'Goals', 'Schedule_Normalized', 'Schedule'];
+  const staffingName = 'Staffing';
+  const visibleDays  = Number(getConfigValue_('SHOW_DAILY_TABS_DAYS', 7));
+
+  const teamGuide = sheets.filter(sh => sh.getName() === CFG.teamGuideSheetName);
+
+  const daily = sheets
+    .filter(sh => parseDailySheetName_(sh.getName()))
+    .sort((a, b) => parseDailySheetName_(b.getName()) - parseDailySheetName_(a.getName()));
+
+  const weekly = sheets
+    .filter(sh => parseWeeklyTabDate_(sh.getName()))
+    .sort((a, b) => parseWeeklyTabDate_(b.getName()) - parseWeeklyTabDate_(a.getName()));
+
+  const staffing = sheets.filter(sh => sh.getName() === staffingName);
+  const admin    = sheets.filter(sh => adminNames.includes(sh.getName()));
+  const other    = sheets.filter(sh =>
+    !parseDailySheetName_(sh.getName()) &&
+    !parseWeeklyTabDate_(sh.getName()) &&
+    sh.getName() !== CFG.teamGuideSheetName &&
+    sh.getName() !== staffingName &&
+    !adminNames.includes(sh.getName())
+  );
+
+  // Apply correct visibility before reordering
+  daily.forEach((sh, i)  => i < visibleDays                  ? sh.showSheet() : sh.hideSheet());
+  weekly.forEach((sh, i) => i < CFG.weekly.visibleTabCount   ? sh.showSheet() : sh.hideSheet());
+  admin.forEach(sh  => sh.hideSheet());
+  teamGuide.forEach(sh => sh.showSheet());
+  staffing.forEach(sh  => sh.showSheet());
+
+  const ordered = [...teamGuide, ...daily.slice(0, visibleDays), ...weekly.slice(0, CFG.weekly.visibleTabCount), ...staffing, ...other, ...admin];
+
+  ordered.forEach((sh, i) => {
+    ss.setActiveSheet(sh);
+    ss.moveActiveSheet(i + 1);
+  });
+
+  SpreadsheetApp.getUi().alert('Tabs organized successfully.');
 }
 
 // ── Help dialogs ──────────────────────────────────────────────────────────────
