@@ -681,7 +681,12 @@ function writeStaffingRecommendationTable_(sheet, rows) {
  */
 function getOrCreateStaffingSheet_() {
   const ss = SpreadsheetApp.getActive();
-  const sheetName = getConfigValue_('STAFFING_SHEET_NAME', CFG.staffing.sheetName);
+  const staffingCfg = CFG.staffing || {};
+  const sheetName = getConfigValue_(
+    'STAFFING_SHEET_NAME',
+    staffingCfg.sheetName || 'Staffing'
+  );
+
   return getOrCreateSheet_(ss, sheetName);
 }
 

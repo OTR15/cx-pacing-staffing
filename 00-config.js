@@ -86,7 +86,18 @@ const CFG = {
     'Fraser',
     'Isaac',
     'Quint Test'
-  ]
+  ],
+
+  staffing: {
+    sheetName: 'Staffing',
+    ticketsPerProductiveHour: 8,
+    agedRiskWeight: 1.5,
+    reserveHoursBuffer: 11,
+    minimumAgentsFloor: 4,
+    cautionUnassignedThreshold: 10,
+    estimatedWorkableTicketsPerHour: 45,
+    endOfDayHour: 18
+  }
 };
 
 // =============================================================================
