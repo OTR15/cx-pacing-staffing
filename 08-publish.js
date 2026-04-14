@@ -439,16 +439,18 @@ function isUnderperforming_(actual, goals) {
  * Run from the menu after supervisors have filled in the review columns.
  */
 function applyGoalAdjustments() {
-  const ss        = SpreadsheetApp.getActive();
-  const sheet     = ss.getActiveSheet();
+  const ss    = SpreadsheetApp.getActive();
+  const sheet = ss.getActiveSheet();
   const sheetName = sheet.getName();
 
+  // Verify it's a daily tab
   if (!parseDailySheetName_(sheetName)) {
-    SpreadsheetApp.getUi().alert('Please navigate to a daily tab before running Apply Goal Adjustments.');
+    SpreadsheetApp.getUi().alert('Please navigate to a daily tab before running this.');
     return;
   }
 
   const dateObj = parseDailySheetName_(sheetName);
+  // ... rest of function unchanged
 
   const layout      = getLayout_();
   const eodSection  = layout.sections.find(s => s.key === 'EOD');
@@ -494,10 +496,7 @@ function applyGoalAdjustments() {
     }
 
     // ── Percentage adjustment: rescale goals and recompute ────────────────
-    // Sheets may auto-convert "100%" to 1, "75%" to 0.75, etc.
-    // Handle both decimal (<=1) and whole number (>1) formats.
-    const adjustRaw = Number(adjust);
-    const adjustPct = adjustRaw <= 1 ? adjustRaw : adjustRaw / 100;
+    const adjustPct = parseFloat(adjust) / 100;
     if (isNaN(adjustPct) || adjustPct <= 0) continue;
 
     const schedule      = getScheduleForRep_(scheduleMap, rep.repName);
@@ -615,27 +614,4 @@ function backfillMarch31() {
   });
 
   SpreadsheetApp.getUi().alert('March 31 backfill complete: 11AM, 2PM, 6PM, EOD.');
-}
-
-function rebuildAndRepublishToday() {
-  const now  = new Date();
-  const hour = Number(Utilities.formatDate(now, CFG.timezone, 'H'));
-
-  const fired = CFG.checkpoints.filter(cp => cp.hour <= hour);
-  if (!fired.length) {
-    SpreadsheetApp.getUi().alert('No checkpoints have fired yet today.');
-    return;
-  }
-
-  createTodayTab();
-
-  fired.forEach((cp, i) => {
-    publishCheckpointForDate_(now, cp);
-    if (i < fired.length - 1) Utilities.sleep(3000);
-  });
-
-  SpreadsheetApp.getUi().alert(
-    'Today tab rebuilt and republished through ' +
-    fired[fired.length - 1].label + '.'
-  );
 }

@@ -38,8 +38,7 @@ function onOpen() {
       .addItem('Build Team Guide Tab',        'buildTeamGuideTab')
   );
   addKpiAdjustmentMenu(menu);
-
-  menu.addToUi();
+    menu.addToUi();
 }
 
 // ── Seed / first-run setup ────────────────────────────────────────────────────
