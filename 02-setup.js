@@ -37,6 +37,7 @@ function onOpen() {
       .addItem('Setup Checklist',             'showSetupChecklist')
       .addItem('Build Team Guide Tab',        'buildTeamGuideTab')
   );
+  addKpiAdjustmentMenu(menu);
 
   menu.addToUi();
 }
