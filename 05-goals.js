@@ -235,14 +235,29 @@ function getWorstPacingStatus_(actual, targets) {
 
 /**
  * Applies the appropriate background color to a cell based on pacing status.
+ *
+ * Status values and their colors:
+ *   green       - on target           (#b6d7a8 soft green)
+ *   yellow      - near target         (#ffe599 soft yellow)
+ *   red         - behind target       (#f4cccc soft red)
+ *   cto         - full/partial CTO    (#d9b8f5 muted purple)
+ *   vto         - full/partial VTO    (#fce5cd soft orange)
+ *   unscheduled - not on schedule     (#000000 black)
+ *   exempt      - off / no data       (#ffffff white)
+ *
  * @param {GoogleAppsScript.Spreadsheet.Range} range
- * @param {'green'|'yellow'|'red'|'exempt'} status
+ * @param {'green'|'yellow'|'red'|'cto'|'vto'|'unscheduled'|'exempt'} status
  */
 function applyPacingColor_(range, status) {
   const colors = {
-    green:  '#b6d7a8',
-    yellow: '#ffe599',
-    red:    '#f4cccc'
+    green:        '#b6d7a8',
+    yellow:       '#ffe599',
+    red:          '#f4cccc',
+    cto:          '#d9b8f5',
+    vto:          '#fce5cd',
+    unscheduled:  '#000000'
   };
-  range.setBackground(colors[status] || '#ffffff');
+  const bg   = colors[status] || '#ffffff';
+  const font = status === 'unscheduled' ? '#ffffff' : '#000000';
+  range.setBackground(bg).setFontColor(font);
 }

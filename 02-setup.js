@@ -9,31 +9,25 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Pacing Report')
-    .addItem('Fix Sheet Now', 'fixSheetNow')
-    .addItem('Rebuild Yesterday + Today', 'fixYesterdayAndToday')
-    .addItem('Refresh Today Only', 'refreshTodayOnly')
+    .addItem('Setup: Seed Project',         'seedPrototypeSetup')
+    .addItem('Setup: Show Admin Tabs',      'unhideUtilitySheets')
+    .addItem('Setup: Hide Admin Tabs',      'hideUtilitySheetsMenu_')
+    .addItem('Help: Build Team Guide Tab',  'buildTeamGuideTab')
     .addSeparator()
-    .addItem('Suggest Next Schedule Tab', 'autofillNextScheduleTab')
+    .addItem('Run: Normalize Schedule',           'normalizeCurrentWeekSchedule')
+    .addItem('Run: Build Today Tab',              'createTodayTab')
+    .addItem('Run: Publish Current Checkpoint',   'publishCurrentCheckpoint')
+    .addItem('Run: Apply Goal Adjustments',       'applyGoalAdjustments')
+    .addItem('Run: Publish Full Day Test',        'testFullDayTodaySlow')
     .addSeparator()
-    .addItem('Show Admin Tabs', 'unhideUtilitySheets')
-    .addItem('Hide Admin Tabs', 'hideUtilitySheetsMenu_')
-    .addItem('Open Team Guide', 'buildTeamGuideTab')
+    .addItem('Automation: Install Daily Triggers', 'installTriggers')
+    .addItem('Automation: Remove Triggers',        'removePacingTriggers')
     .addSeparator()
-    .addSubMenu(
-      SpreadsheetApp.getUi()
-        .createMenu('Admin Tools')
-        .addItem('Normalize Schedule', 'normalizeCurrentWeekSchedule')
-        .addItem('Build Today Tab', 'createTodayTab')
-        .addItem('Publish Current Checkpoint', 'publishCurrentCheckpoint')
-        .addItem('Publish Full Day Test', 'testFullDayTodaySlow')
-        .addItem('Install Daily Triggers', 'installTriggers')
-        .addItem('Remove Triggers', 'removePacingTriggers')
-        .addItem('Seed Project', 'seedPrototypeSetup')
-        .addItem('Setup Checklist', 'showSetupChecklist')
-        .addItem('Daily Use Guide', 'showDailyUseGuide')
-    )
+    .addItem('Help: Setup Checklist',  'showSetupChecklist')
+    .addItem('Help: Daily Use Guide',  'showDailyUseGuide')
     .addToUi();
 }
+
 // ── Seed / first-run setup ────────────────────────────────────────────────────
 
 /**

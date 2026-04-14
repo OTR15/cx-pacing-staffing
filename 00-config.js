@@ -96,7 +96,7 @@ const CFG = {
   sheetName: 'Staffing',
   ticketsPerProductiveHour: 8,
   agedRiskWeight: 1.5,
-  reserveHoursBuffer: 6,
+  reserveHoursBuffer: 9,
   minimumAgentsFloor: 4,
   cautionUnassignedThreshold: 10,
   estimatedWorkableTicketsPerHour: 40,

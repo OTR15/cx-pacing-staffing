@@ -71,6 +71,20 @@ function buildDailySheet_(sheet, dateObj) {
     .setHorizontalAlignment('center')
     .setFontWeight('bold');
 
+  // ── Underperformance review block ────────────────────────────────────────
+  sheet.getRange(1, layout.reviewFlagCol, 1, 3).merge();
+  sheet.getRange(1, layout.reviewFlagCol)
+    .setValue('Underperformance Review')
+    .setHorizontalAlignment('center')
+    .setFontWeight('bold')
+    .setBackground('#e06666')
+    .setFontColor('#ffffff');
+
+  sheet.getRange(2, layout.reviewFlagCol, 1, 3)
+    .setValues([['Needs Review', 'Reason', 'Goal Adjustment']])
+    .setFontWeight('bold')
+    .setBackground('#ea9999');
+
   // ── Row 2: column headers ────────────────────────────────────────────────
   sheet.getRange(2, 1).setValue('Rep Name').setFontWeight('bold').setBackground('#00ff66');
   sheet.getRange(2, 2).setValue('Manager').setFontWeight('bold').setBackground('#00ff66');
@@ -105,6 +119,7 @@ function buildDailySheet_(sheet, dateObj) {
 
   // ── Dropdowns on progress columns ───────────────────────────────────────
   applyProgressValidation_(sheet, dataRowCount, layout.progressStartCol);
+  applyReviewValidation_(sheet, dataRowCount, layout);
 
   // ── Column widths ────────────────────────────────────────────────────────
   sheet.setFrozenRows(2);
@@ -158,10 +173,20 @@ function getLayout_() {
     startCol += 4;
   });
 
+  const progressStartCol = startCol;
+  const notesCol         = progressStartCol + CFG.daily.progressLabels.length - 1;
+  const reviewFlagCol    = notesCol + 1;
+  const reviewReasonCol  = notesCol + 2;
+  const reviewAdjustCol  = notesCol + 3;
+
   return {
     sections,
-    progressStartCol: startCol,
-    lastCol:          startCol + CFG.daily.progressLabels.length - 1
+    progressStartCol,
+    lastCol:         reviewAdjustCol,
+    notesCol,
+    reviewFlagCol,   // "Needs Review" — auto-set at EOD
+    reviewReasonCol, // Supervisor dropdown: reason for underperformance
+    reviewAdjustCol  // Supervisor dropdown: goal adjustment %
   };
 }
 
@@ -200,6 +225,33 @@ function applyProgressValidation_(sheet, rowCount, progressStartCol) {
 }
 
 // ── Tab color ─────────────────────────────────────────────────────────────────
+
+/**
+ * Applies dropdown validation to the three underperformance review columns.
+ * These are filled by supervisors after EOD flagging.
+ *
+ * Col reviewFlagCol:   auto-set — no validation needed (written by publish)
+ * Col reviewReasonCol: CTO / VTO / Unexcused Absence / Project / Performance
+ * Col reviewAdjustCol: Exempt / 25% / 50% / 65% / 75% / 90% / 100%
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} rowCount
+ * @param {{ reviewReasonCol: number, reviewAdjustCol: number }} layout
+ */
+function applyReviewValidation_(sheet, rowCount, layout) {
+  const reasonValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['', 'CTO', 'VTO', 'Unexcused Absence', 'Project', 'Performance'], true)
+    .build();
+
+  const adjustValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['', 'Exempt', '25%', '50%', '65%', '75%', '90%', '100%'], true)
+    .build();
+
+  sheet.getRange(CFG.daily.firstDataRow, layout.reviewReasonCol, rowCount, 1)
+    .setDataValidation(reasonValidation);
+  sheet.getRange(CFG.daily.firstDataRow, layout.reviewAdjustCol, rowCount, 1)
+    .setDataValidation(adjustValidation);
+}
 
 /** Sets the daily tab color to green. */
 function colorDailyTab_(sheet) {
