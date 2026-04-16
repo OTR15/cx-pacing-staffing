@@ -123,6 +123,7 @@ function buildDailySheet_(sheet, dateObj) {
 
   // ── Column widths ────────────────────────────────────────────────────────
   sheet.setFrozenRows(2);
+  sheet.setFrozenColumns(1);
   sheet.setColumnWidth(1, 150);
   sheet.setColumnWidth(2, 140);
 

@@ -94,8 +94,8 @@ const CFG = {
     agedRiskWeight: 1.5,
     reserveHoursBuffer: 11,
     minimumAgentsFloor: 4,
-    cautionUnassignedThreshold: 10,
-    estimatedWorkableTicketsPerHour: 45,
+    cautionUnassignedThreshold: 12,
+    estimatedWorkableTicketsPerHour: 50,
     endOfDayHour: 18
   }
 };
