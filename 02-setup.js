@@ -27,6 +27,7 @@ function onOpen() {
       .addSeparator()
       .addItem('Set Next Schedule Tab',       'promptSetNextScheduleTab')
       .addItem('Normalize Schedule',          'normalizeCurrentWeekSchedule')
+      .addItem('Rebuild Weekly Tabs',         'rebuildAllWeeklyReports')
       .addSeparator()
       .addItem('Organize Tabs',               'organizeTabs')
   );

@@ -44,18 +44,20 @@ function buildWeeklyReportForWeek_(dateObj) {
   if (!sh) {
     sh = ss.insertSheet(tabName);
   } else {
-    sh.clear();
+    clearWeeklyReportSheet_(sh);
   }
 
   sh.setTabColor(CFG.weekly.tabColor);
 
   const weekData = collectWeeklyData_(week.monday, week.sunday);
+  const kpiSnapshot = collectWeeklyKpiSnapshot_(week.monday, week.sunday);
   writeWeeklyLeadershipSummary_(sh, weekData, week.monday, week.sunday);
   writeWeeklyRepTable_(sh, weekData);
   writeWeeklyDailyMovementSection_(sh, weekData);
-  writeWeeklyCharts_(sh, weekData);
+  writeWeeklyKpiSnapshotSection_(sh, kpiSnapshot, week.monday, week.sunday);
+  writeWeeklyCharts_(sh, weekData, kpiSnapshot);
 
-  sh.autoResizeColumns(1, Math.min(40, sh.getMaxColumns()));
+  sh.autoResizeColumns(1, Math.min(21, sh.getMaxColumns()));
 }
 
 /**
@@ -77,6 +79,11 @@ function backfillWeeklyReports() {
   }
 
   manageWeeklyTabs();
+}
+
+function rebuildAllWeeklyReports() {
+  backfillWeeklyReports();
+  SpreadsheetApp.getUi().alert('Weekly tabs rebuilt, including the missing Week 3/30 - 4/5.');
 }
 
 // ── Data collection ───────────────────────────────────────────────────────────
@@ -331,22 +338,27 @@ function writeWeeklyDailyMovementSection_(sh, weekData) {
 }
 
 /**
- * Embeds three charts into the weekly report tab:
+ * Embeds four charts into the weekly report tab:
  *   1. Line chart: team daily volume (closed/replied/messages over the week)
  *   2. Bar chart:  weekly closed tickets by rep
  *   3. Column chart: hourly productivity by rep
+ *   4. Bar chart: weekly KPI overall score snapshot by agent
  */
-function writeWeeklyCharts_(sh, weekData) {
+function writeWeeklyCharts_(sh, weekData, kpiSnapshot) {
   const dailyStartRow = 13;
   const dailyStartCol = 13;
   const repTableStartRow = 12;
+  const chartStartCol = CFG.weekly.chartStartCol || 24;
+  const snapshotStartRow = CFG.weekly.kpiSnapshot.tableStartRow;
 
   sh.insertChart(
     sh.newChart()
       .setChartType(Charts.ChartType.LINE)
       .addRange(sh.getRange(dailyStartRow, dailyStartCol, weekData.teamDaily.length + 1, 4))
-      .setPosition(2, 10, 0, 0)
+      .setPosition(2, chartStartCol, 0, 0)
       .setOption('title', 'Team Daily Volume')
+      .setOption('width', 720)
+      .setOption('height', 260)
       .build()
   );
 
@@ -354,8 +366,11 @@ function writeWeeklyCharts_(sh, weekData) {
     sh.newChart()
       .setChartType(Charts.ChartType.BAR)
       .addRange(sh.getRange(repTableStartRow, 1, weekData.reps.length + 1, 2))
-      .setPosition(20, 10, 0, 0)
+      .setPosition(20, chartStartCol, 0, 0)
       .setOption('title', 'Weekly Closed Tickets by Rep')
+      .setOption('width', 720)
+      .setOption('height', 260)
+      .setOption('legend', { position: 'none' })
       .build()
   );
 
@@ -363,10 +378,37 @@ function writeWeeklyCharts_(sh, weekData) {
     sh.newChart()
       .setChartType(Charts.ChartType.COLUMN)
       .addRange(sh.getRange(repTableStartRow, 1, weekData.reps.length + 1, 9))
-      .setPosition(38, 10, 0, 0)
+      .setPosition(38, chartStartCol, 0, 0)
       .setOption('title', 'Hourly Productivity by Rep')
+      .setOption('width', 720)
+      .setOption('height', 260)
       .build()
   );
+
+  if (kpiSnapshot.chartRows.length) {
+    const chartDataRowCount = kpiSnapshot.chartRows.length + 1;
+    sh.getRange(snapshotStartRow + 1, 13, chartDataRowCount, 2).clearContent();
+    sh.getRange(snapshotStartRow + 1, 13, 1, 2).setValues([['Agent', 'Overall %']]);
+    sh.getRange(snapshotStartRow + 2, 13, kpiSnapshot.chartRows.length, 2).setValues(kpiSnapshot.chartRows);
+    sh.getRange(snapshotStartRow + 2, 14, kpiSnapshot.chartRows.length, 1).setNumberFormat('0.0"%"');
+
+    sh.insertChart(
+      sh.newChart()
+        .setChartType(Charts.ChartType.BAR)
+        .addRange(sh.getRange(snapshotStartRow + 1, 13, chartDataRowCount, 2))
+        .setPosition(CFG.weekly.kpiSnapshot.chartStartRow, chartStartCol, 0, 0)
+        .setOption('title', 'Weekly KPI Overall % by Agent')
+        .setOption('width', 720)
+        .setOption('height', 300)
+        .setOption('legend', { position: 'none' })
+        .build()
+    );
+  }
+}
+
+function clearWeeklyReportSheet_(sh) {
+  sh.getCharts().forEach(chart => sh.removeChart(chart));
+  sh.clear();
 }
 
 // ── Tab management ────────────────────────────────────────────────────────────

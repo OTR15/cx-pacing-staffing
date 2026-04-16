@@ -31,7 +31,14 @@ const CFG = {
   // ── Weekly report settings ─────────────────────────────────────────────────
   weekly: {
     visibleTabCount: 4,    // How many weekly tabs to keep visible
-    tabColor: '#9fc5f8'
+    tabColor: '#9fc5f8',
+    chartStartCol: 24,
+    kpiSnapshot: {
+      spreadsheetId: '1kNBJtMMsNo3W13fnIbkCBcCbHdzgOCNk24eA1w_zPq4',
+      adminSheetName: 'ADMIN_VIEW',
+      tableStartRow: 32,
+      chartStartRow: 56
+    }
   },
 
   // ── Daily sheet settings ───────────────────────────────────────────────────
