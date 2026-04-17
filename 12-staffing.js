@@ -14,7 +14,16 @@
  *   minimumAgentsFloor: number,
  *   cautionUnassignedThreshold: number,
  *   estimatedWorkableTicketsPerHour: number,
- *   endOfDayHour: number
+ *   endOfDayHour: number,
+ *   pulseLogSpreadsheetId: string,
+ *   workableVolumeLogSheetName: string,
+ *   overnightInflowLogSheetName: string,
+ *   observedDataBlendWeight: number,
+ *   useObservedData: boolean,
+ *   shadowModelEnabled: boolean,
+ *   minimumObservedSampleDays: number,
+ *   workableRateMultiplier: number,
+ *   sendHomeBufferMultiplier: number
  * }}
  */
 function getStaffingAssumptions_() {
@@ -54,7 +63,52 @@ function getStaffingAssumptions_() {
     endOfDayHour: Number(getConfigValue_(
       'STAFFING_END_OF_DAY_HOUR',
       defaults.endOfDayHour || 18
-    )) || defaults.endOfDayHour || 18
+    )) || defaults.endOfDayHour || 18,
+
+    pulseLogSpreadsheetId: String(getConfigValue_(
+      'STAFFING_PULSE_LOG_SPREADSHEET_ID',
+      defaults.pulseLogSpreadsheetId || ''
+    ) || '').trim(),
+
+    workableVolumeLogSheetName: String(getConfigValue_(
+      'STAFFING_WORKABLE_VOLUME_LOG_SHEET_NAME',
+      defaults.workableVolumeLogSheetName || 'Workable Volume Log'
+    ) || defaults.workableVolumeLogSheetName || 'Workable Volume Log').trim(),
+
+    overnightInflowLogSheetName: String(getConfigValue_(
+      'STAFFING_OVERNIGHT_INFLOW_LOG_SHEET_NAME',
+      defaults.overnightInflowLogSheetName || 'Overnight Inflow Log'
+    ) || defaults.overnightInflowLogSheetName || 'Overnight Inflow Log').trim(),
+
+    observedDataBlendWeight: Number(getConfigValue_(
+      'STAFFING_OBSERVED_DATA_BLEND_WEIGHT',
+      defaults.observedDataBlendWeight || 0
+    )) || defaults.observedDataBlendWeight || 0,
+
+    useObservedData: String(getConfigValue_(
+      'STAFFING_USE_OBSERVED_DATA',
+      defaults.useObservedData
+    )).toLowerCase() === 'true',
+
+    shadowModelEnabled: String(getConfigValue_(
+      'STAFFING_SHADOW_MODEL_ENABLED',
+      defaults.shadowModelEnabled
+    )).toLowerCase() === 'true',
+
+    minimumObservedSampleDays: Number(getConfigValue_(
+      'STAFFING_MINIMUM_OBSERVED_SAMPLE_DAYS',
+      defaults.minimumObservedSampleDays || 10
+    )) || defaults.minimumObservedSampleDays || 10,
+
+    workableRateMultiplier: Number(getConfigValue_(
+      'STAFFING_WORKABLE_RATE_MULTIPLIER',
+      defaults.workableRateMultiplier || 1
+    )) || defaults.workableRateMultiplier || 1,
+
+    sendHomeBufferMultiplier: Number(getConfigValue_(
+      'STAFFING_SEND_HOME_BUFFER_MULTIPLIER',
+      defaults.sendHomeBufferMultiplier || 1
+    )) || defaults.sendHomeBufferMultiplier || 1
   };
 }
 
@@ -482,6 +536,7 @@ function buildCheckpointStaffingRows_(dateObj, inputs) {
  *   dateLabel: string,
  *   assumptions: Object,
  *   pulseInputs: Object,
+ *   observedMetrics: Object,
  *   rows: Array<Object>
  * }}
  */
@@ -494,6 +549,7 @@ function buildStaffingModelForDate_(dateObj) {
     dateLabel: inputs.dateLabel,
     assumptions: inputs.assumptions,
     pulseInputs: inputs.pulseInputs,
+    observedMetrics: inputs.observedMetrics,
     rows
   };
 }
@@ -568,18 +624,160 @@ function getPulseInputsForDate_(sheet, dateObj) {
   return { byCheckpointKey };
 }
 
+function getDateTextForTimeZone_(dateObj, timezone, format) {
+  return Utilities.formatDate(dateObj, timezone || CFG.timezone, format || 'yyyy-MM-dd');
+}
+
+function safeNumberOrBlank_(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const num = Number(value);
+  return isNaN(num) ? '' : num;
+}
+
+function averageNumbers_(values) {
+  const nums = (values || [])
+    .filter(value => value !== '' && value !== null && value !== undefined)
+    .map(value => Number(value))
+    .filter(value => !isNaN(value));
+  if (!nums.length) return '';
+  const total = nums.reduce((sum, value) => sum + value, 0);
+  return round2_(total / nums.length);
+}
+
+function readSheetRecordsByHeader_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const values = sheet.getDataRange().getDisplayValues();
+  const headers = values[0].map(header => String(header || '').trim());
+
+  return values.slice(1).map(row => {
+    const record = {};
+    headers.forEach((header, index) => {
+      record[header] = row[index];
+    });
+    return record;
+  });
+}
+
+function getPulseLogSpreadsheet_(assumptions) {
+  const spreadsheetId = String((assumptions || {}).pulseLogSpreadsheetId || '').trim();
+  if (!spreadsheetId) return null;
+
+  try {
+    return SpreadsheetApp.openById(spreadsheetId);
+  } catch (e) {
+    Logger.log('Unable to open Pulse Log spreadsheet: ' + e);
+    return null;
+  }
+}
+
+function getObservedWorkableMetricsForDate_(dateObj, assumptions) {
+  const timezone = CFG.timezone;
+  const dateText = getDateTextForTimeZone_(dateObj, timezone, 'yyyy-MM-dd');
+  const pulseSs = getPulseLogSpreadsheet_(assumptions);
+
+  const fallback = {
+    status: pulseSs ? 'missing_log_tabs' : 'missing_pulse_log',
+    dateText: dateText,
+    latestHourlyTimestampAz: '',
+    latestHourlyWorkableOpenInbox: '',
+    latestHourlyWorkableClosed: '',
+    latestHourlyWorkableTotalVolume: '',
+    latestHourlySourceStatus: '',
+    overnightBusinessDateAz: '',
+    overnightWorkableInflowProxy: '',
+    overnightSourceStatus: '',
+    hourlySampleCount7d: 0,
+    overnightSampleCount7d: 0,
+    avgHourlyWorkableOpenInbox7d: '',
+    avgOvernightInflowProxy7d: '',
+    readiness: 'Waiting for workable data',
+    shadowStatus: 'Shadow model is scaffolding only in this release.'
+  };
+
+  if (!pulseSs) return fallback;
+
+  const workableSheet = pulseSs.getSheetByName((assumptions || {}).workableVolumeLogSheetName);
+  const overnightSheet = pulseSs.getSheetByName((assumptions || {}).overnightInflowLogSheetName);
+  if (!workableSheet || !overnightSheet) return fallback;
+
+  const workableRows = readSheetRecordsByHeader_(workableSheet);
+  const overnightRows = readSheetRecordsByHeader_(overnightSheet);
+
+  const usableWorkableRows = workableRows.filter(row => {
+    return String(row.source_status || '') === 'view_open_inbox_only';
+  });
+  const usableOvernightRows = overnightRows.filter(row => {
+    return String(row.source_status || '') === 'view_open_inbox_only';
+  });
+
+  const matchingHourlyRows = usableWorkableRows.filter(row => String(row.date_az || '') === dateText);
+  const latestHourly = matchingHourlyRows.length ? matchingHourlyRows[matchingHourlyRows.length - 1] : null;
+
+  const matchingOvernight = usableOvernightRows.filter(row => String(row.business_date_az || '') === dateText);
+  const overnightRow = matchingOvernight.length ? matchingOvernight[matchingOvernight.length - 1] : null;
+
+  const trailingStart = new Date(dateObj);
+  trailingStart.setDate(trailingStart.getDate() - 6);
+  const trailingStartText = getDateTextForTimeZone_(trailingStart, timezone, 'yyyy-MM-dd');
+
+  const recentHourlyRows = usableWorkableRows.filter(row => {
+    const rowDate = String(row.date_az || '');
+    return rowDate && rowDate >= trailingStartText && rowDate <= dateText;
+  });
+  const recentOvernightRows = usableOvernightRows.filter(row => {
+    const rowDate = String(row.business_date_az || '');
+    return rowDate && rowDate >= trailingStartText && rowDate <= dateText;
+  });
+
+  const hourlyDays = {};
+  recentHourlyRows.forEach(row => {
+    hourlyDays[String(row.date_az || '')] = true;
+  });
+  const overnightDays = {};
+  recentOvernightRows.forEach(row => {
+    overnightDays[String(row.business_date_az || '')] = true;
+  });
+
+  const hourlyDayCount = Object.keys(hourlyDays).filter(Boolean).length;
+  const overnightDayCount = Object.keys(overnightDays).filter(Boolean).length;
+  const minDays = Number((assumptions || {}).minimumObservedSampleDays || 0);
+
+  return {
+    status: 'ready',
+    dateText: dateText,
+    latestHourlyTimestampAz: latestHourly ? String(latestHourly.timestamp_az || '') : '',
+    latestHourlyWorkableOpenInbox: latestHourly ? safeNumberOrBlank_(latestHourly.workable_open_inbox) : '',
+    latestHourlyWorkableClosed: latestHourly ? safeNumberOrBlank_(latestHourly.workable_closed_hour) : '',
+    latestHourlyWorkableTotalVolume: latestHourly ? safeNumberOrBlank_(latestHourly.workable_total_volume) : '',
+    latestHourlySourceStatus: latestHourly ? String(latestHourly.source_status || '') : '',
+    overnightBusinessDateAz: overnightRow ? String(overnightRow.business_date_az || '') : '',
+    overnightWorkableInflowProxy: overnightRow ? safeNumberOrBlank_(overnightRow.overnight_workable_inflow_proxy) : '',
+    overnightSourceStatus: overnightRow ? String(overnightRow.source_status || '') : '',
+    hourlySampleCount7d: hourlyDayCount,
+    overnightSampleCount7d: overnightDayCount,
+    avgHourlyWorkableOpenInbox7d: averageNumbers_(recentHourlyRows.map(row => row.workable_open_inbox)),
+    avgOvernightInflowProxy7d: averageNumbers_(recentOvernightRows.map(row => row.overnight_workable_inflow_proxy)),
+    readiness: hourlyDayCount >= minDays && overnightDayCount >= minDays
+      ? 'Enough sample days for review'
+      : 'Collecting baseline (' + hourlyDayCount + '/' + minDays + ' hourly days, ' + overnightDayCount + '/' + minDays + ' overnight days)',
+    shadowStatus: 'Observed data is visible here, but official staffing recommendations still use the legacy model.'
+  };
+}
+
 /**
  * Loads all staffing inputs needed to build the model for a date.
  * First-pass version uses stubbed pulse inputs.
  *
  * @param {Date} dateObj
- * @returns {{
+* @returns {{
 *   dateObj: Date,
 *   dateLabel: string,
 *   roster: Array,
 *   scheduleMap: Object,
 *   assumptions: Object,
-*   pulseInputs: Object
+*   pulseInputs: Object,
+*   observedMetrics: Object
 * }}
 */
 function getStaffingInputsForDate_(dateObj) {
@@ -596,6 +794,7 @@ function getStaffingInputsForDate_(dateObj) {
  }
 
  const pulseInputs = getPulseInputsForDate_(staffingSheet, dateObj);
+ const observedMetrics = getObservedWorkableMetricsForDate_(dateObj, assumptions);
 
  return {
    dateObj,
@@ -603,7 +802,8 @@ function getStaffingInputsForDate_(dateObj) {
    roster,
    scheduleMap,
    assumptions,
-   pulseInputs
+   pulseInputs,
+   observedMetrics
  };
 }
 
@@ -621,7 +821,7 @@ function testBuildStaffingModel() {
  * @param {Array<Object>} rows
  */
 function writeStaffingRecommendationTable_(sheet, rows) {
-  const outputStartRow = 14;
+  const outputStartRow = 24;
   const headers = [[
     'Checkpoint Key',
     'Checkpoint Label',
@@ -728,6 +928,35 @@ function writeStaffingInputSection_(sheet, model) {
   });
 }
 
+function writeStaffingObservedDataSection_(sheet, model) {
+  const observed = (model || {}).observedMetrics || {};
+
+  const rows = [
+    ['Observed Data', '', ''],
+    ['Pulse Log Date', observed.dateText || '', 'Observed metrics are read from the Pulse Log spreadsheet.'],
+    ['Latest Hourly Timestamp', observed.latestHourlyTimestampAz || '', 'Latest workable inbox hourly snapshot for the selected date.'],
+    ['Latest Hourly Workable Open', observed.latestHourlyWorkableOpenInbox, 'Directly from the agent-facing workable inbox view.'],
+    ['Latest Hourly Workable Closed', observed.latestHourlyWorkableClosed, 'Blank until closed workable logic is cleanly defined.'],
+    ['Latest Hourly Workable Total', observed.latestHourlyWorkableTotalVolume, 'Blank until closed workable logic is available.'],
+    ['Overnight Inflow Proxy', observed.overnightWorkableInflowProxy, 'Current proxy: max(0, SOD workable open - EOD workable open).'],
+    ['Avg Hourly Workable Open 7d', observed.avgHourlyWorkableOpenInbox7d, 'Trailing 7-day average across workable hourly rows.'],
+    ['Avg Overnight Inflow Proxy 7d', observed.avgOvernightInflowProxy7d, 'Trailing 7-day average across overnight proxy rows.'],
+    ['Observed Readiness', observed.readiness || '', 'Baseline collection status only in this release.'],
+    ['Shadow Model Status', observed.shadowStatus || '', 'Official staffing recommendations remain on the legacy model.']
+  ];
+
+  const startRow = 12;
+  const startCol = 1;
+  const width = 3;
+  const clearRows = 11;
+
+  sheet.getRange(startRow, startCol, clearRows, width).clearContent().clearFormat();
+  sheet.getRange(startRow, startCol, rows.length, width).setValues(rows);
+  sheet.getRange(startRow, startCol, 1, width).setFontWeight('bold');
+  sheet.getRange(startRow + 1, startCol, rows.length - 1, 1).setFontWeight('bold');
+  sheet.autoResizeColumns(startCol, width);
+}
+
 /**
  * Writes the staffing sheet for the current model.
  *
@@ -736,6 +965,7 @@ function writeStaffingInputSection_(sheet, model) {
  */
 function writeStaffingSheet_(sheet, model) {
   writeStaffingInputSection_(sheet, model);
+  writeStaffingObservedDataSection_(sheet, model);
   writeStaffingRecommendationTable_(sheet, (model || {}).rows || []);
 }
 

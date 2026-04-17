@@ -103,7 +103,16 @@ const CFG = {
     minimumAgentsFloor: 4,
     cautionUnassignedThreshold: 12,
     estimatedWorkableTicketsPerHour: 50,
-    endOfDayHour: 18
+    endOfDayHour: 18,
+    pulseLogSpreadsheetId: '1ozcKrCo_wgFLqt1F8oIC7otR16wfij8huZlJ5Yv-L_w',
+    workableVolumeLogSheetName: 'Workable Volume Log',
+    overnightInflowLogSheetName: 'Overnight Inflow Log',
+    observedDataBlendWeight: 0,
+    useObservedData: false,
+    shadowModelEnabled: true,
+    minimumObservedSampleDays: 10,
+    workableRateMultiplier: 1,
+    sendHomeBufferMultiplier: 1
   }
 };
 

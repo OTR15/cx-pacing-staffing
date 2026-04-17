@@ -92,7 +92,24 @@ function ensureConfigSheet_(ss) {
     ['PACING_GREEN_MIN',             1.0],
     ['PACING_YELLOW_MIN',            0.9],
     ['PACING_GREEN_MAX_SHORTFALL',   0],
-    ['PACING_YELLOW_MAX_SHORTFALL',  5]
+    ['PACING_YELLOW_MAX_SHORTFALL',  5],
+    ['STAFFING_SHEET_NAME',                      CFG.staffing.sheetName],
+    ['STAFFING_TICKETS_PER_PRODUCTIVE_HOUR',     CFG.staffing.ticketsPerProductiveHour],
+    ['STAFFING_AGED_RISK_WEIGHT',                CFG.staffing.agedRiskWeight],
+    ['STAFFING_RESERVE_HOURS_BUFFER',            CFG.staffing.reserveHoursBuffer],
+    ['STAFFING_MINIMUM_AGENTS_FLOOR',            CFG.staffing.minimumAgentsFloor],
+    ['STAFFING_CAUTION_UNASSIGNED_THRESHOLD',    CFG.staffing.cautionUnassignedThreshold],
+    ['STAFFING_ESTIMATED_WORKABLE_TICKETS_PER_HOUR', CFG.staffing.estimatedWorkableTicketsPerHour],
+    ['STAFFING_END_OF_DAY_HOUR',                 CFG.staffing.endOfDayHour],
+    ['STAFFING_PULSE_LOG_SPREADSHEET_ID',        CFG.staffing.pulseLogSpreadsheetId],
+    ['STAFFING_WORKABLE_VOLUME_LOG_SHEET_NAME',  CFG.staffing.workableVolumeLogSheetName],
+    ['STAFFING_OVERNIGHT_INFLOW_LOG_SHEET_NAME', CFG.staffing.overnightInflowLogSheetName],
+    ['STAFFING_OBSERVED_DATA_BLEND_WEIGHT',      CFG.staffing.observedDataBlendWeight],
+    ['STAFFING_USE_OBSERVED_DATA',               CFG.staffing.useObservedData],
+    ['STAFFING_SHADOW_MODEL_ENABLED',            CFG.staffing.shadowModelEnabled],
+    ['STAFFING_MINIMUM_OBSERVED_SAMPLE_DAYS',    CFG.staffing.minimumObservedSampleDays],
+    ['STAFFING_WORKABLE_RATE_MULTIPLIER',        CFG.staffing.workableRateMultiplier],
+    ['STAFFING_SEND_HOME_BUFFER_MULTIPLIER',     CFG.staffing.sendHomeBufferMultiplier]
   ];
 
   sh.getRange(1, 1, values.length, 2).setValues(values);
