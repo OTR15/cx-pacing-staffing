@@ -57,6 +57,7 @@ function publishCheckpointForDate_(dateObj, checkpoint) {
   if (!section) throw new Error('Section not found for checkpoint ' + checkpoint.key);
 
   const fullRoster  = getDisplayRoster_();
+  const rowMap      = getDailySheetRowMap_(sheet);
   const scheduleMap = getScheduleMapForDate_(dateObj);
   const goalsMap    = getGoalsMap_();
   const range       = getCheckpointIsoRange_(dateObj, checkpoint);
@@ -66,7 +67,8 @@ function publishCheckpointForDate_(dateObj, checkpoint) {
 
   for (let i = 0; i < fullRoster.length; i++) {
     const rep      = fullRoster[i];
-    const row      = CFG.daily.firstDataRow + i;
+    const row      = rowMap[normalizeName_(rep.repName)];
+    if (!row) continue;
     const schedule = getScheduleForRep_(scheduleMap, rep.repName);
 
     // ── Not yet started: rep is scheduled but their shift hasn't begun ────
@@ -455,16 +457,7 @@ function applyGoalAdjustments() {
   const fullRoster  = getDisplayRoster_();
   const scheduleMap = getScheduleMapForDate_(dateObj);
   const goalsMap    = getGoalsMap_();
-
-  // Build a map of repName → row number from the sheet itself
-  // so we don't assume roster order matches sheet order
-  const lastRow    = sheet.getLastRow();
-  const nameValues = sheet.getRange(CFG.daily.firstDataRow, 1, lastRow - CFG.daily.firstDataRow + 1, 1).getValues();
-  const rowMap     = {};
-  nameValues.forEach((r, i) => {
-    const name = String(r[0] || '').trim();
-    if (name) rowMap[normalizeName_(name)] = CFG.daily.firstDataRow + i;
-  });
+  const rowMap      = getDailySheetRowMap_(sheet);
 
   let adjustedCount = 0;
 
@@ -572,11 +565,13 @@ function fixNotYetStartedColorsToday() {
 
   const layout      = getLayout_();
   const fullRoster  = getDisplayRoster_();
+  const rowMap      = getDailySheetRowMap_(sheet);
   const scheduleMap = getScheduleMapForDate_(dateObj);
 
   for (let i = 0; i < fullRoster.length; i++) {
     const rep      = fullRoster[i];
-    const row      = CFG.daily.firstDataRow + i;
+    const row      = rowMap[normalizeName_(rep.repName)];
+    if (!row) continue;
     const schedule = getScheduleForRep_(scheduleMap, rep.repName);
 
     if (!schedule.startText || schedule.hours <= 0) continue;

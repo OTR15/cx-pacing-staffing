@@ -18,6 +18,13 @@ function onOpen() {
   );
 
   menu.addSubMenu(
+    ui.createMenu('Supervisor View')
+      .addItem('Sort Active Tab by Manager',  'sortActiveDailySheetByManager')
+      .addItem('Filter Active Tab to Manager','filterActiveDailySheetByManager')
+      .addItem('Show All Managers',           'clearManagerFilterOnActiveDailySheet')
+  );
+
+  menu.addSubMenu(
     ui.createMenu('Admin')
       .addItem('Show Admin Tabs',             'unhideUtilitySheets')
       .addItem('Hide Admin Tabs',             'hideUtilitySheetsMenu_')

@@ -136,6 +136,31 @@ function buildDailySheet_(sheet, dateObj) {
   SpreadsheetApp.flush();
 }
 
+/**
+ * Builds a normalized rep-name → sheet-row map from a daily tab.
+ * This lets publish/update flows keep working even after supervisors
+ * sort or filter the sheet.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @returns {Object<string, number>}
+ */
+function getDailySheetRowMap_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CFG.daily.firstDataRow) return {};
+
+  const rowCount = lastRow - CFG.daily.firstDataRow + 1;
+  const nameValues = sheet.getRange(CFG.daily.firstDataRow, 1, rowCount, 1).getDisplayValues();
+  const rowMap = {};
+
+  nameValues.forEach((row, index) => {
+    const repName = String(row[0] || '').trim();
+    if (!repName) return;
+    rowMap[normalizeName_(repName)] = CFG.daily.firstDataRow + index;
+  });
+
+  return rowMap;
+}
+
 // ── Layout calculator ─────────────────────────────────────────────────────────
 
 /**
@@ -257,4 +282,127 @@ function applyReviewValidation_(sheet, rowCount, layout) {
 /** Sets the daily tab color to green. */
 function colorDailyTab_(sheet) {
   sheet.setTabColor('#93c47d');
+}
+
+/**
+ * Sorts the active daily tab by Manager, then Rep Name.
+ * Safe to run before future publishes because publish now resolves rows
+ * by rep name from the sheet itself.
+ */
+function sortActiveDailySheetByManager() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const dateObj = parseDailySheetName_(sheet.getName());
+  if (!dateObj) {
+    SpreadsheetApp.getUi().alert('Please open a daily pacing tab first.');
+    return;
+  }
+
+  const layout = getLayout_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CFG.daily.firstDataRow) return;
+
+  sheet.getRange(
+    CFG.daily.firstDataRow,
+    1,
+    lastRow - CFG.daily.firstDataRow + 1,
+    layout.lastCol
+  ).sort([
+    { column: 2, ascending: true },
+    { column: 1, ascending: true }
+  ]);
+
+  SpreadsheetApp.getUi().alert('The active daily tab was sorted by manager, then rep name.');
+}
+
+/**
+ * Prompts for a manager name and filters the active daily tab so only that
+ * manager's reps remain visible.
+ */
+function filterActiveDailySheetByManager() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const dateObj = parseDailySheetName_(sheet.getName());
+  if (!dateObj) {
+    SpreadsheetApp.getUi().alert('Please open a daily pacing tab first.');
+    return;
+  }
+
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt(
+    'Filter Daily Tab by Manager',
+    'Enter the manager name exactly as shown in column B.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const managerName = String(response.getResponseText() || '').trim();
+  if (!managerName) {
+    ui.alert('Enter a manager name, or use "Show All Managers" to clear the filter.');
+    return;
+  }
+
+  const appliedManager = applyManagerFilterToDailySheet_(sheet, managerName);
+  if (!appliedManager) {
+    ui.alert('No rows matched manager: ' + managerName);
+    return;
+  }
+
+  ui.alert('The active daily tab is now filtered to manager: ' + appliedManager);
+}
+
+/**
+ * Clears any manager filter from the active daily tab.
+ */
+function clearManagerFilterOnActiveDailySheet() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const dateObj = parseDailySheetName_(sheet.getName());
+  if (!dateObj) {
+    SpreadsheetApp.getUi().alert('Please open a daily pacing tab first.');
+    return;
+  }
+
+  const filter = sheet.getFilter();
+  if (filter) {
+    filter.removeColumnFilterCriteria(2);
+  }
+
+  SpreadsheetApp.getUi().alert('Manager filtering was cleared on the active daily tab.');
+}
+
+/**
+ * Applies a manager filter to a daily sheet using the built-in sheet filter.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {string} managerName
+ * @returns {string} The matched manager name shown on the sheet, or '' if not found.
+ */
+function applyManagerFilterToDailySheet_(sheet, managerName) {
+  const layout = getLayout_();
+  const lastRow = Math.max(sheet.getLastRow(), CFG.daily.firstDataRow);
+  const rowCount = lastRow - 1; // include header row 2 through the last data row
+
+  let filter = sheet.getFilter();
+  if (!filter) {
+    sheet.getRange(2, 1, rowCount, layout.lastCol).createFilter();
+    filter = sheet.getFilter();
+  }
+
+  const managerValues = sheet.getRange(CFG.daily.firstDataRow, 2, Math.max(lastRow - CFG.daily.firstDataRow + 1, 0), 1)
+    .getDisplayValues()
+    .map(row => String(row[0] || '').trim())
+    .filter(Boolean);
+
+  const uniqueManagers = [...new Set(managerValues)];
+  const normalizedTarget = normalizeName_(managerName);
+  const matchedManager = uniqueManagers.find(name => normalizeName_(name) === normalizedTarget);
+  if (!matchedManager) return '';
+
+  const hiddenManagers = uniqueManagers.filter(name => name !== matchedManager);
+
+  const criteria = SpreadsheetApp.newFilterCriteria()
+    .setHiddenValues(hiddenManagers)
+    .build();
+
+  filter.setColumnFilterCriteria(2, criteria);
+  return matchedManager;
 }
