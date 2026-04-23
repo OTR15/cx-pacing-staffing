@@ -27,10 +27,10 @@ function getGoalsMap_() {
 
   const map = {
     _default: {
-      closedTickets:  Number(defaults[0] || CFG.baselineGoals.closedTickets),
-      ticketsReplied: Number(defaults[1] || CFG.baselineGoals.ticketsReplied),
-      messagesSent:   Number(defaults[2] || CFG.baselineGoals.messagesSent),
-      csat:           Number(defaults[3] || CFG.baselineGoals.csat),
+      closedTickets:  defaults[0] !== '' ? Number(defaults[0]) : CFG.baselineGoals.closedTickets,
+      ticketsReplied: defaults[1] !== '' ? Number(defaults[1]) : CFG.baselineGoals.ticketsReplied,
+      messagesSent:   defaults[2] !== '' ? Number(defaults[2]) : CFG.baselineGoals.messagesSent,
+      csat:           defaults[3] !== '' ? Number(defaults[3]) : CFG.baselineGoals.csat,
       useShift:       String(defaults[4]).toLowerCase() !== 'false'
     }
   };
@@ -42,10 +42,10 @@ function getGoalsMap_() {
     if (!name) continue;
 
     map[normalizeName_(name)] = {
-      closedTickets:  Number(row[1] || map._default.closedTickets),
-      ticketsReplied: Number(row[2] || map._default.ticketsReplied),
-      messagesSent:   Number(row[3] || map._default.messagesSent),
-      csat:           Number(row[4] || map._default.csat),
+      closedTickets:  row[1] !== '' ? Number(row[1]) : map._default.closedTickets,
+      ticketsReplied: row[2] !== '' ? Number(row[2]) : map._default.ticketsReplied,
+      messagesSent:   row[3] !== '' ? Number(row[3]) : map._default.messagesSent,
+      csat:           row[4] !== '' ? Number(row[4]) : map._default.csat,
       useShift:       map._default.useShift
     };
   }
