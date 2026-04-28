@@ -21,9 +21,6 @@ function onOpen() {
     .addItem('Sort Active Tab by Manager',   'sortActiveDailySheetByManager')
     .addItem('Filter Active Tab to Manager', 'filterActiveDailySheetByManager')
     .addItem('Show All Managers',            'clearManagerFilterOnActiveDailySheet')
-    .addSeparator()
-    .addItem('⚡ Apply Goal Adjustment',     'applyGoalAdjustment')
-    .addItem('📊 Re-score Weekly Row',       'applyWeeklyGoalAdjustment')
     .addToUi();
 
   ui.createMenu('Admin')

@@ -42,8 +42,6 @@ function buildWeeklyReportForWeek_(dateObj) {
 
   let sh = ss.getSheetByName(tabName);
 
-  // Preserve any supervisor adjustments before clearing the sheet.
-  const savedAdjustments = sh ? readWeeklyKpiAdjustments_(sh) : {};
 
   if (!sh) {
     sh = ss.insertSheet(tabName);
@@ -59,7 +57,6 @@ function buildWeeklyReportForWeek_(dateObj) {
   writeWeeklyRepTable_(sh, weekData);
   writeWeeklyDailyMovementSection_(sh, weekData);
   writeWeeklyKpiSnapshotSection_(sh, kpiSnapshot, week.monday, week.sunday);
-  reapplyWeeklyKpiAdjustments_(sh, savedAdjustments);
   writeWeeklyCharts_(sh, weekData, kpiSnapshot);
 
   sh.autoResizeColumns(1, Math.min(21, sh.getMaxColumns()));
