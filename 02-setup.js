@@ -10,9 +10,11 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
 
   ui.createMenu('Pacing Report')
-    .addItem('Publish Current Checkpoint', 'publishCurrentCheckpoint')
-    .addItem('Rebuild Current Day',        'rebuildAndRepublishToday')
-    .addItem('Apply Goal Adjustments',     'applyGoalAdjustments')
+    .addItem('Publish Current Checkpoint',       'publishCurrentCheckpoint')
+    .addItem('Rebuild Current Day',              'rebuildAndRepublishToday')
+    .addItem('Apply Goal Adjustments',                'applyGoalAdjustments')
+    .addItem('Migrate Tab to Goal Adjustments',       'migrateTabToGoalAdjustments')
+    .addItem('Migrate All Tabs to Goal Adjustments',  'migrateAllTabsToGoalAdjustments')
     .addToUi();
 
   ui.createMenu('KPI Supervisor View')

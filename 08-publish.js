@@ -134,10 +134,16 @@ function publishCheckpointForDate_(dateObj, checkpoint) {
 
     const effectiveHours = getEffectiveWorkedHours_(schedule);
 
+    // If a supervisor has entered hours to remove, subtract them before scaling goals
+    const hoursRemovedRaw = sheet.getRange(row, layout.reviewAdjustCol).getValue();
+    const hoursRemoved    = (hoursRemovedRaw !== '' && hoursRemovedRaw !== null && !isNaN(Number(hoursRemovedRaw)))
+      ? Number(hoursRemovedRaw) : 0;
+    const billedHours = Math.max(0, effectiveHours - hoursRemoved);
+
     const adjustedGoals = {
-      closedTickets:  useShiftGoals ? adjustGoalByShift_(goals.closedTickets,  effectiveHours) : goals.closedTickets,
-      ticketsReplied: useShiftGoals ? adjustGoalByShift_(goals.ticketsReplied, effectiveHours) : goals.ticketsReplied,
-      messagesSent:   useShiftGoals ? adjustGoalByShift_(goals.messagesSent,   effectiveHours) : goals.messagesSent,
+      closedTickets:  useShiftGoals ? adjustGoalByShift_(goals.closedTickets,  billedHours) : goals.closedTickets,
+      ticketsReplied: useShiftGoals ? adjustGoalByShift_(goals.ticketsReplied, billedHours) : goals.ticketsReplied,
+      messagesSent:   useShiftGoals ? adjustGoalByShift_(goals.messagesSent,   billedHours) : goals.messagesSent,
       csat:           goals.csat
     };
 
@@ -173,24 +179,6 @@ function publishCheckpointForDate_(dateObj, checkpoint) {
     const onTrack      = computeOnTrack_(actual, targets);
     const eodMet  = checkpoint.key === 'EOD' ? computeEodGoalMet_(actual, adjustedGoals) : '';
 
-    // ── EOD underperformance flagging ─────────────────────────────────────
-    // Flag any active rep below 65% on any metric at EOD for supervisor review.
-    if (checkpoint.key === 'EOD') {
-      const isFlagged = isUnderperforming_(actual, adjustedGoals);
-      if (isFlagged) {
-        sheet.getRange(row, layout.reviewFlagCol)
-          .setValue('Needs Review')
-          .setBackground('#e06666')
-          .setFontColor('#ffffff')
-          .setFontWeight('bold');
-      } else {
-        sheet.getRange(row, layout.reviewFlagCol)
-          .setValue('')
-          .setBackground('#ffffff')
-          .setFontColor('#000000')
-          .setFontWeight('normal');
-      }
-    }
     const onProject      = schedule.inOffice    ? 'In Office'      : '';
     const actions        = schedule.workingLunch ? 'Working Lunch' : '';
 
@@ -430,15 +418,17 @@ function isUnderperforming_(actual, goals) {
 }
 
 /**
- * Reads the Reason and Goal Adjustment columns on today's tab and applies
- * the supervisor's adjustments to EOD colors and EOD Goal Met.
+ * Reads the Reason and Hours Removed columns on the active daily tab and
+ * applies the supervisor's hour-based adjustments to all checkpoint colors
+ * and EOD Goal Met.
  *
  * Adjustment logic:
- *   Exempt  → clears EOD metric colors to white, sets EOD Goal Met = 'Exempt'
- *   25–100% → scales adjusted goals by the percentage, recomputes EOD Goal Met,
- *              repaints EOD metric cells with updated pacing colors
+ *   Hours Removed (number) → subtracts that many hours from the rep's effective
+ *     worked hours, recomputes shift-scaled goals, and repaints all checkpoint
+ *     metric cells that already have data.
  *
- * Run from the menu after supervisors have filled in the review columns.
+ * Any agent can be adjusted — no underperformance flag required.
+ * Run from the menu after supervisors have filled in the adjustment columns.
  */
 function applyGoalAdjustments() {
   const ss        = SpreadsheetApp.getActive();
@@ -452,93 +442,97 @@ function applyGoalAdjustments() {
 
   const dateObj = parseDailySheetName_(sheetName);
 
-  const layout      = getLayout_();
-  const eodSection  = layout.sections.find(s => s.key === 'EOD');
-  const fullRoster  = getDisplayRoster_();
-  const scheduleMap = getScheduleMapForDate_(dateObj);
-  const goalsMap    = getGoalsMap_();
-  const rowMap      = getDailySheetRowMap_(sheet);
+  const layout     = getLayout_();
+  const eodSection = layout.sections.find(s => s.key === 'EOD');
+  const fullRoster = getDisplayRoster_();
+  const goalsMap   = getGoalsMap_();
+  const rowMap     = getDailySheetRowMap_(sheet);
 
   let adjustedCount = 0;
 
   for (let i = 0; i < fullRoster.length; i++) {
     const rep = fullRoster[i];
     const row = rowMap[normalizeName_(rep.repName)];
-    if (!row) continue; // rep not found in sheet
+    if (!row) continue;
 
-    const reason = String(sheet.getRange(row, layout.reviewReasonCol).getValue() || '').trim();
-    const adjust = String(sheet.getRange(row, layout.reviewAdjustCol).getValue() || '').trim();
+    const reason      = String(sheet.getRange(row, layout.reviewReasonCol).getValue() || '').trim();
+    const adjustRaw   = sheet.getRange(row, layout.reviewAdjustCol).getValue();
+    const hoursRemoved = Number(adjustRaw);
 
-    if (!adjust) continue; // supervisor hasn't acted on this rep yet
+    if (adjustRaw === '' || adjustRaw === null || isNaN(hoursRemoved)) continue;
 
     adjustedCount++;
 
-    // ── Exempt: clear EOD colors, mark Exempt ────────────────────────────
-    if (adjust === 'Exempt') {
-      sheet.getRange(row, eodSection.startCol, 1, 4)
-        .setBackground('#ffffff');
-      sheet.getRange(row, layout.progressStartCol + 3).setValue('Exempt');
-      sheet.getRange(row, layout.reviewFlagCol)
-        .setValue('Reviewed: Exempt')
-        .setBackground('#b7e1cd')
-        .setFontColor('#000000')
-        .setFontWeight('normal');
-      continue;
-    }
-
-    // ── Percentage adjustment: rescale goals and recompute ────────────────
-    // Sheets may auto-convert "100%" to 1, "75%" to 0.75, etc.
-    // Handle both decimal (<=1) and whole number (>1) formats.
-    const adjustRaw = Number(adjust);
-    const adjustPct = adjustRaw <= 1 ? adjustRaw : adjustRaw / 100;
-    if (isNaN(adjustPct) || adjustPct <= 0) continue;
-
-    const schedule      = getScheduleForRep_(scheduleMap, rep.repName);
     const goals         = getEffectiveGoals_(goalsMap, rep.repName);
-    const effectiveHours = getEffectiveWorkedHours_(schedule);
     const useShiftGoals =
       String(getConfigValue_('USE_SHIFT_BASED_GOALS', true)).toLowerCase() !== 'false' &&
       goals.useShift !== false;
 
-    const baseGoals = {
-      closedTickets:  useShiftGoals ? adjustGoalByShift_(goals.closedTickets,  effectiveHours) : goals.closedTickets,
-      ticketsReplied: useShiftGoals ? adjustGoalByShift_(goals.ticketsReplied, effectiveHours) : goals.ticketsReplied,
-      messagesSent:   useShiftGoals ? adjustGoalByShift_(goals.messagesSent,   effectiveHours) : goals.messagesSent,
+    // Read effective hours from the Notes column — written at publish time and
+    // survives schedule changes, so adjustments work on any past tab
+    const noteText       = String(sheet.getRange(row, layout.notesCol).getValue() || '');
+    const effMatch       = noteText.match(/Effective:\s*([\d.]+)/);
+    const effectiveHours = effMatch
+      ? Number(effMatch[1])
+      : Number(getConfigValue_('STANDARD_SHIFT_HOURS', CFG.standardShiftHours));
+
+    // Reduce worked hours by the supervisor-entered amount (floor at 0)
+    const adjustedHours = Math.max(0, effectiveHours - hoursRemoved);
+
+    const adjustedGoals = {
+      closedTickets:  useShiftGoals ? adjustGoalByShift_(goals.closedTickets,  adjustedHours) : goals.closedTickets,
+      ticketsReplied: useShiftGoals ? adjustGoalByShift_(goals.ticketsReplied, adjustedHours) : goals.ticketsReplied,
+      messagesSent:   useShiftGoals ? adjustGoalByShift_(goals.messagesSent,   adjustedHours) : goals.messagesSent,
       csat:           goals.csat
     };
 
-    // Scale goals down by the adjustment percentage
-    const scaledGoals = {
-      closedTickets:  baseGoals.closedTickets  * adjustPct,
-      ticketsReplied: baseGoals.ticketsReplied * adjustPct,
-      messagesSent:   baseGoals.messagesSent   * adjustPct,
-      csat:           baseGoals.csat
-    };
+    // Repaint every checkpoint that already has data written
+    layout.sections.forEach(section => {
+      const vals = sheet.getRange(row, section.startCol, 1, 4).getValues()[0];
+      const hasData = vals.some(v => v !== '' && v !== null);
+      if (!hasData) return;
 
-    // Read actual EOD values from the sheet
-    const eodVals = sheet.getRange(row, eodSection.startCol, 1, 4).getValues()[0];
-    const actual  = {
-      closedTickets:  Number(eodVals[0] || 0),
-      ticketsReplied: Number(eodVals[1] || 0),
-      messagesSent:   Number(eodVals[2] || 0),
-      csat:           eodVals[3] === '' ? '' : Number(eodVals[3] || 0)
-    };
+      const actual = {
+        closedTickets:  Number(vals[0]) || 0,
+        ticketsReplied: Number(vals[1]) || 0,
+        messagesSent:   Number(vals[2]) || 0,
+        csat:           vals[3] === '' ? '' : Number(vals[3]) || 0
+      };
 
-    // Recompute pacing colors against scaled goals
-    const metricStatuses = getMetricStatuses_(actual, scaledGoals);
-    applyPacingColor_(sheet.getRange(row, eodSection.closedCol),   metricStatuses.closedTickets);
-    applyPacingColor_(sheet.getRange(row, eodSection.repliedCol),  metricStatuses.ticketsReplied);
-    applyPacingColor_(sheet.getRange(row, eodSection.messagesCol), metricStatuses.messagesSent);
-    applyPacingColor_(sheet.getRange(row, eodSection.csatCol),     metricStatuses.csat);
+      const targets = {
+        closedTickets:  adjustedGoals.closedTickets  * section.percent,
+        ticketsReplied: adjustedGoals.ticketsReplied * section.percent,
+        messagesSent:   adjustedGoals.messagesSent   * section.percent,
+        csat:           adjustedGoals.csat
+      };
 
-    // Recompute EOD Goal Met
-    const eodMet = computeEodGoalMet_(actual, scaledGoals);
-    sheet.getRange(row, layout.progressStartCol + 3).setValue(eodMet);
+      const statuses = getMetricStatuses_(actual, targets);
+      applyPacingColor_(sheet.getRange(row, section.closedCol),   statuses.closedTickets);
+      applyPacingColor_(sheet.getRange(row, section.repliedCol),  statuses.ticketsReplied);
+      applyPacingColor_(sheet.getRange(row, section.messagesCol), statuses.messagesSent);
+      applyPacingColor_(sheet.getRange(row, section.csatCol),     statuses.csat);
+    });
 
-    // Update the review flag to show it's been processed
-    const metLabel = eodMet === 'Yes' ? '✓ Reviewed: ' : '✗ Reviewed: ';
+    // Recompute EOD Goal Met only if EOD data has already been published
+    const eodVals    = sheet.getRange(row, eodSection.startCol, 1, 4).getValues()[0];
+    const eodHasData = eodVals.some(v => v !== '' && v !== null);
+    let   eodMet     = null;
+    if (eodHasData) {
+      const eodActual = {
+        closedTickets:  Number(eodVals[0]) || 0,
+        ticketsReplied: Number(eodVals[1]) || 0,
+        messagesSent:   Number(eodVals[2]) || 0,
+        csat:           eodVals[3] === '' ? '' : Number(eodVals[3]) || 0
+      };
+      eodMet = computeEodGoalMet_(eodActual, adjustedGoals);
+      sheet.getRange(row, layout.progressStartCol + 3).setValue(eodMet);
+    }
+
+    // Mark the status column so supervisors know the adjustment was applied
+    const hoursLabel = '-' + hoursRemoved + 'h' + (reason ? ' / ' + reason : '');
+    const metLabel   = eodMet === 'Yes' ? '✓ Applied: ' : 'Applied: ';
     sheet.getRange(row, layout.reviewFlagCol)
-      .setValue(metLabel + adjust + (reason ? ' / ' + reason : ''))
+      .setValue(metLabel + hoursLabel)
       .setBackground('#b7e1cd')
       .setFontColor('#000000')
       .setFontWeight('normal');
@@ -547,7 +541,7 @@ function applyGoalAdjustments() {
   SpreadsheetApp.flush();
   SpreadsheetApp.getUi().alert(
     'Goal adjustments applied to ' + adjustedCount + ' rep(s).\n\n' +
-    'EOD colors and EOD Goal Met have been updated.'
+    'All checkpoint colors and EOD Goal Met have been updated.'
   );
 }
 
@@ -610,6 +604,74 @@ function backfillMarch31() {
   });
 
   SpreadsheetApp.getUi().alert('March 31 backfill complete: 11AM, 2PM, 6PM, EOD.');
+}
+
+/**
+ * Migrates a single sheet's review block from the old "Underperformance Review"
+ * layout (percentage dropdowns) to the new "Goal Adjustments" layout
+ * (hours-removed numeric input). Used by both single and bulk migration.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ */
+function migrateSheetToGoalAdjustments_(sheet) {
+  const layout   = getLayout_();
+  const lastRow  = sheet.getLastRow();
+  const rowCount = Math.max(lastRow - CFG.daily.firstDataRow + 1, 1);
+
+  sheet.getRange(1, layout.reviewFlagCol, 1, 3).merge();
+  sheet.getRange(1, layout.reviewFlagCol)
+    .setValue('Goal Adjustments')
+    .setHorizontalAlignment('center')
+    .setFontWeight('bold')
+    .setBackground('#6d9eeb')
+    .setFontColor('#ffffff');
+
+  sheet.getRange(2, layout.reviewFlagCol, 1, 3)
+    .setValues([['Status', 'Reason', 'Hours Removed']])
+    .setFontWeight('bold')
+    .setBackground('#a4c2f4');
+
+  const hoursValidation = SpreadsheetApp.newDataValidation()
+    .requireNumberBetween(0, 24)
+    .setAllowInvalid(false)
+    .build();
+
+  sheet.getRange(CFG.daily.firstDataRow, layout.reviewAdjustCol, rowCount, 1)
+    .setDataValidation(hoursValidation);
+}
+
+/**
+ * Migrates the active daily tab to the Goal Adjustments layout.
+ * Run from the menu: Pacing Report → Migrate Tab to Goal Adjustments
+ */
+function migrateTabToGoalAdjustments() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  if (!parseDailySheetName_(sheet.getName())) {
+    SpreadsheetApp.getUi().alert('Please navigate to a daily tab first.');
+    return;
+  }
+  migrateSheetToGoalAdjustments_(sheet);
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getUi().alert('Tab migrated to Goal Adjustments layout.');
+}
+
+/**
+ * Migrates every daily tab in the spreadsheet to the Goal Adjustments layout.
+ * Safe to run multiple times — only reformats headers and validation.
+ * Run from the menu: Pacing Report → Migrate All Tabs to Goal Adjustments
+ */
+function migrateAllTabsToGoalAdjustments() {
+  const ss      = SpreadsheetApp.getActive();
+  const sheets  = ss.getSheets().filter(sh => parseDailySheetName_(sh.getName()));
+
+  if (!sheets.length) {
+    SpreadsheetApp.getUi().alert('No daily tabs found.');
+    return;
+  }
+
+  sheets.forEach(sh => migrateSheetToGoalAdjustments_(sh));
+  SpreadsheetApp.flush();
+  SpreadsheetApp.getUi().alert('Migrated ' + sheets.length + ' daily tab(s) to Goal Adjustments layout.');
 }
 
 function rebuildAndRepublishToday() {

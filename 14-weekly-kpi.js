@@ -16,20 +16,13 @@ const WKPI_COL_CSAT         = 8;
 const WKPI_COL_OVERALL      = 9;
 const WKPI_COL_STATUS       = 10;
 const WKPI_COL_NOTE         = 11;
-const WKPI_COL_REASON       = 12;
-const WKPI_COL_GOAL_ADJ     = 13;
-const WKPI_TOTAL_COLS       = 13;
+const WKPI_TOTAL_COLS       = 11;
 
 // Row offsets within the snapshot table (relative to tableStartRow).
 const WKPI_OFFSET_TITLE    = 0; // merged title bar
 const WKPI_OFFSET_INSTRUCT = 1; // supervisor instructions
 const WKPI_OFFSET_HEADERS  = 2; // column headers
 const WKPI_DATA_OFFSET     = 3; // first agent data row
-
-const WKPI_REASON_OPTIONS = [
-  'Project', 'Training', 'Cross-Train', 'Tech Issue', 'Meeting',
-  'Admin Work', 'Accommodation', 'Leave Ramp', 'Partial Day', 'Exempt'
-];
 
 // ── Meeting time deduction ────────────────────────────────────────────────────
 // Returns the fraction of productive time remaining after standing meetings.
@@ -643,12 +636,7 @@ function writeWeeklyKpiSnapshotSection_(sh, snapshot, monday, sunday) {
 
   // ── Supervisor instructions row ───────────────────────────────
   sh.getRange(startRow + WKPI_OFFSET_INSTRUCT, 1, 1, WKPI_TOTAL_COLS).merge()
-    .setValue(
-      'To adjust a goal: (1) Pick a Reason from the dropdown in col L  ' +
-      '(2) Enter Goal Adj in col M — "75" = 75% of goal, "-10" = subtract 10 tickets  ' +
-      '(3) Run KPI Supervisor View → Re-score Weekly Row.  ' +
-      'Adjustments are preserved when the tab is rebuilt.'
-    )
+    .setValue('Weekly KPI snapshot — scores are calculated from daily pacing data.')
     .setFontStyle('italic')
     .setFontSize(9)
     .setFontColor('#555555')
@@ -659,8 +647,7 @@ function writeWeeklyKpiSnapshotSection_(sh, snapshot, monday, sunday) {
   // ── Column headers ────────────────────────────────────────────
   const headers = [[
     'Agent', 'QA Score', 'QA Goal', 'Tickets Replied', 'Replied Goal',
-    'Closed Tickets', 'Closed Goal', 'CSAT', 'Overall %', 'Status', 'Note',
-    'Reason', 'Goal Adj'
+    'Closed Tickets', 'Closed Goal', 'CSAT', 'Overall %', 'Status', 'Note'
   ]];
 
   sh.getRange(startRow + WKPI_OFFSET_HEADERS, 1, 1, WKPI_TOTAL_COLS)

@@ -71,19 +71,19 @@ function buildDailySheet_(sheet, dateObj) {
     .setHorizontalAlignment('center')
     .setFontWeight('bold');
 
-  // ── Underperformance review block ────────────────────────────────────────
+  // ── Goal adjustments block ───────────────────────────────────────────────
   sheet.getRange(1, layout.reviewFlagCol, 1, 3).merge();
   sheet.getRange(1, layout.reviewFlagCol)
-    .setValue('Underperformance Review')
+    .setValue('Goal Adjustments')
     .setHorizontalAlignment('center')
     .setFontWeight('bold')
-    .setBackground('#e06666')
+    .setBackground('#6d9eeb')
     .setFontColor('#ffffff');
 
   sheet.getRange(2, layout.reviewFlagCol, 1, 3)
-    .setValues([['Needs Review', 'Reason', 'Goal Adjustment']])
+    .setValues([['Status', 'Reason', 'Hours Removed']])
     .setFontWeight('bold')
-    .setBackground('#ea9999');
+    .setBackground('#a4c2f4');
 
   // ── Row 2: column headers ────────────────────────────────────────────────
   sheet.getRange(2, 1).setValue('Rep Name').setFontWeight('bold').setBackground('#00ff66');
@@ -253,12 +253,12 @@ function applyProgressValidation_(sheet, rowCount, progressStartCol) {
 // ── Tab color ─────────────────────────────────────────────────────────────────
 
 /**
- * Applies dropdown validation to the three underperformance review columns.
- * These are filled by supervisors after EOD flagging.
+ * Applies validation to the goal adjustment columns.
+ * Supervisors can adjust any agent's daily goal by entering hours to remove.
  *
- * Col reviewFlagCol:   auto-set — no validation needed (written by publish)
+ * Col reviewFlagCol:   written by applyGoalAdjustments() — no validation needed
  * Col reviewReasonCol: CTO / VTO / Unexcused Absence / Project / Performance
- * Col reviewAdjustCol: Exempt / 25% / 50% / 65% / 75% / 90% / 100%
+ * Col reviewAdjustCol: positive number — hours to subtract from the agent's worked hours
  *
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {number} rowCount
@@ -269,14 +269,15 @@ function applyReviewValidation_(sheet, rowCount, layout) {
     .requireValueInList(['', 'CTO', 'VTO', 'Unexcused Absence', 'Project', 'Performance'], true)
     .build();
 
-  const adjustValidation = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['', 'Exempt', '25', '50', '65', '75', '90', '100'], true)
+  const hoursValidation = SpreadsheetApp.newDataValidation()
+    .requireNumberBetween(0, 24)
+    .setAllowInvalid(false)
     .build();
 
   sheet.getRange(CFG.daily.firstDataRow, layout.reviewReasonCol, rowCount, 1)
     .setDataValidation(reasonValidation);
   sheet.getRange(CFG.daily.firstDataRow, layout.reviewAdjustCol, rowCount, 1)
-    .setDataValidation(adjustValidation);
+    .setDataValidation(hoursValidation);
 }
 
 /** Sets the daily tab color to green. */
