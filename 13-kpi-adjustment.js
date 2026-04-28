@@ -15,16 +15,6 @@ const KPI_HEADER_ROW     = 2;
 const KPI_DATA_START_ROW = 3;
 
 // ─────────────────────────────────────────────────────────────
-// Add "Apply Goal Adjustment" to the existing menu.
-// Call addKpiAdjustmentMenu(menu) from your existing onOpen()
-// before menu.addToUi() — pass in your menu object.
-// ─────────────────────────────────────────────────────────────
-function addKpiAdjustmentMenu(menu) {
-  menu.addSeparator();
-  menu.addItem('⚡ Apply Goal Adjustment', 'applyGoalAdjustment');
-}
-
-// ─────────────────────────────────────────────────────────────
 // Main function — applies goal adjustment to the selected row
 // ─────────────────────────────────────────────────────────────
 function applyGoalAdjustment() {
@@ -170,4 +160,235 @@ function _kpiUpdateTargets(notesStr, newC, newR) {
 // ─────────────────────────────────────────────────────────────
 function _kpiIsDailyTab(sheetName) {
   return /^\d{1,2}\/\d{1,2}\/\d{2}$/.test(sheetName);
+}
+
+// =============================================================
+// Weekly snapshot re-scorer
+// Supervisor workflow:
+//   1. Select the agent's row in the KPI Admin Snapshot table
+//      on a weekly report tab (e.g. "Week 4/21 - 4/27").
+//   2. Enter a Reason from the dropdown in the Reason column.
+//   3. Enter a Goal Adj value (optional):
+//        "75"  → 75 % of the import goal (reduce by 25 %)
+//        "-10" → subtract 10 tickets from both Replied & Closed goals
+//        blank → re-score with no goal change (useful for Exempt).
+//   4. Run Pacing Report → Re-score Weekly Row.
+// =============================================================
+
+function applyWeeklyGoalAdjustment() {
+  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  const ui    = SpreadsheetApp.getUi();
+  const row   = sheet.getActiveRange().getRow();
+
+  if (!parseWeeklyTabDate_(sheet.getName())) {
+    ui.alert('Please select a row on a weekly report tab (e.g. "Week 4/21 - 4/27").');
+    return;
+  }
+
+  const tableStartRow = CFG.weekly.kpiSnapshot.tableStartRow;
+  const dataStartRow  = tableStartRow + WKPI_DATA_OFFSET;
+
+  if (row < dataStartRow) {
+    ui.alert('Please select an agent row inside the KPI Admin Snapshot table.');
+    return;
+  }
+
+  const rowData    = sheet.getRange(row, 1, 1, WKPI_TOTAL_COLS).getValues()[0];
+  const agentName  = String(rowData[WKPI_COL_AGENT       - 1] || '').trim();
+  const qaScore    = rowData[WKPI_COL_QA_SCORE  - 1];
+  const repliedAct = rowData[WKPI_COL_REPLIED   - 1];
+  const closedAct  = rowData[WKPI_COL_CLOSED    - 1];
+  const csatAct    = rowData[WKPI_COL_CSAT      - 1];
+  const reason     = String(rowData[WKPI_COL_REASON    - 1] || '').trim();
+  const adjRaw     = String(rowData[WKPI_COL_GOAL_ADJ  - 1] || '').trim();
+
+  if (!agentName) {
+    ui.alert('No agent name found in this row — make sure you selected a data row.');
+    return;
+  }
+  if (!reason) {
+    ui.alert('Please choose a Reason from the dropdown in col L before re-scoring.');
+    return;
+  }
+
+  // ── Exempt shortcut ──────────────────────────────────────────
+  if (reason === 'Exempt') {
+    sheet.getRange(row, WKPI_COL_OVERALL).setValue('');
+    sheet.getRange(row, WKPI_COL_STATUS).setValue('Exempt');
+    sheet.getRange(row, WKPI_COL_NOTE).setValue('Exempt by supervisor');
+    sheet.getRange(row, 1, 1, WKPI_TOTAL_COLS).setBackground('#f1f3f4');
+    ui.alert('✅ ' + agentName + ' marked Exempt for this week.');
+    return;
+  }
+
+  // ── Resolve base goals from cell notes (set by import) ───────
+  const repliedGoalCell = sheet.getRange(row, WKPI_COL_REPLIED_GOAL);
+  const closedGoalCell  = sheet.getRange(row, WKPI_COL_CLOSED_GOAL);
+  const baseReplied = _kpiParseOriginalNote_(repliedGoalCell.getNote())
+    ?? Number(rowData[WKPI_COL_REPLIED_GOAL - 1]);
+  const baseClosed  = _kpiParseOriginalNote_(closedGoalCell.getNote())
+    ?? Number(rowData[WKPI_COL_CLOSED_GOAL  - 1]);
+
+  // ── Apply supervisor adjustment ───────────────────────────────
+  let adjReplied = baseReplied;
+  let adjClosed  = baseClosed;
+
+  if (adjRaw) {
+    const parsed = _kpiParseGoalAdj_(adjRaw, baseReplied, baseClosed);
+    if (!parsed) {
+      ui.alert(
+        'Invalid Goal Adj: "' + adjRaw + '".\n\n' +
+        'Enter a percentage (e.g. "75" = 75% of goal)\n' +
+        'or a raw reduction (e.g. "-10" = subtract 10 tickets).'
+      );
+      return;
+    }
+    adjReplied = parsed.replied;
+    adjClosed  = parsed.closed;
+  }
+
+  // ── Re-fetch KPI config for weights / thresholds ─────────────
+  const cfg           = getWeeklyKpiConfig_();
+  const goalQa        = parseFloat(cfg.GOAL_QA)                  || 90;
+  const goalCsat      = parseFloat(cfg.GOAL_CSAT)                || 4.9;
+  const globalGoalReplied = parseFloat(cfg.GOAL_TICKETS_REPLIED) || 70;
+  const wQa    = parseFloat(cfg.WEIGHT_QA)      || 40;
+  const wTix   = parseFloat(cfg.WEIGHT_TICKETS) || 20;
+  const wClose = parseFloat(cfg.WEIGHT_CLOSED)  || 20;
+  const wCsat  = parseFloat(cfg.WEIGHT_CSAT)    || 20;
+  const afQa   = parseFloat(cfg.AUTOFAIL_QA_THRESHOLD)       || 74;
+  const afTixGlobal = parseFloat(cfg.AUTOFAIL_TICKETS_THRESHOLD) || 40;
+  const afTix  = globalGoalReplied > 0
+    ? Math.round(afTixGlobal * (adjReplied / globalGoalReplied))
+    : afTixGlobal;
+
+  // ── Score calculation ─────────────────────────────────────────
+  const toNum = v => (v === '' || v == null) ? null : Number(v);
+  const cap   = (v, goal) => v == null || isNaN(v) ? null : Math.min(v / goal, 1.10);
+
+  const qa      = toNum(qaScore);
+  const replied = toNum(repliedAct);
+  const closed  = toNum(closedAct);
+  const csat    = toNum(csatAct);
+
+  const qaRatio      = cap(qa,      goalQa);
+  const repliedRatio = cap(replied, adjReplied);
+  const closedRatio  = cap(closed,  adjClosed);
+  const csatRatio    = cap(csat,    goalCsat);
+
+  let totalWeight = 0, weightedSum = 0;
+  [[qaRatio, wQa], [repliedRatio, wTix], [closedRatio, wClose], [csatRatio, wCsat]]
+    .forEach(([ratio, weight]) => {
+      if (ratio != null) { weightedSum += ratio * weight; totalWeight += weight; }
+    });
+
+  let overallPct = totalWeight > 0 ? (weightedSum / totalWeight) * 100 : null;
+  const autoFail = (qa != null && qa <= afQa) || (replied != null && replied < afTix);
+  if (autoFail) overallPct = 0;
+
+  // ── Status + note ─────────────────────────────────────────────
+  let status, note;
+  if (autoFail) {
+    status = 'AUTO-FAIL';
+    const failures = [];
+    if (qa != null && qa <= afQa)          failures.push('QA');
+    if (replied != null && replied < afTix) failures.push('Tickets Replied');
+    note = failures.join(' + ');
+  } else if (overallPct == null) {
+    status = 'No data'; note = '';
+  } else if (overallPct >= 106) {
+    status = 'Exceeding'; note = '';
+  } else if (overallPct >= 100) {
+    status = 'Meeting'; note = '';
+  } else if (overallPct >= 90) {
+    status = 'Close'; note = '';
+  } else {
+    status = 'Not Meeting';
+    const opps = [
+      { label: 'QA',              ratio: qaRatio,      gap: qa      != null ? goalQa      - qa      : null },
+      { label: 'Tickets Replied', ratio: repliedRatio, gap: replied != null ? adjReplied  - replied : null },
+      { label: 'Closed Tickets',  ratio: closedRatio,  gap: closed  != null ? adjClosed   - closed  : null },
+      { label: 'CSAT',            ratio: csatRatio,    gap: csat    != null ? goalCsat    - csat    : null }
+    ].filter(o => o.ratio != null);
+
+    if (opps.length) {
+      opps.sort((a, b) => a.ratio - b.ratio);
+      const top = opps[0];
+      const gap = top.label === 'CSAT'
+        ? (top.gap != null ? top.gap.toFixed(2) : '')
+        : (top.gap != null ? Math.round(top.gap).toString() : '');
+      note = 'Focus: ' + top.label + (top.gap != null && top.gap > 0 ? ' (-' + gap + ')' : '');
+    } else {
+      note = '';
+    }
+  }
+
+  // ── Row background ────────────────────────────────────────────
+  const bgMap = {
+    'Exceeding':   '#e6f4ea',
+    'Meeting':     '#e8f0fe',
+    'Close':       '#fef7e0',
+    'Not Meeting': '#fce8e6',
+    'AUTO-FAIL':   '#fce8e6',
+    'No data':     '#ffffff'
+  };
+  const bg = bgMap[status] || '#ffffff';
+
+  // ── Write back ────────────────────────────────────────────────
+  repliedGoalCell.setValue(adjReplied);
+  closedGoalCell.setValue(adjClosed);
+  sheet.getRange(row, WKPI_COL_OVERALL).setValue(overallPct);
+  sheet.getRange(row, WKPI_COL_STATUS).setValue(status);
+  sheet.getRange(row, WKPI_COL_NOTE).setValue(note);
+  // Keep Reason + Goal Adj columns their input background.
+  sheet.getRange(row, 1, 1, WKPI_COL_NOTE).setBackground(bg);
+
+  ui.alert(
+    '✅ Re-scored: ' + agentName + '\n\n' +
+    'Reason: ' + reason + '\n' +
+    'Replied Goal: ' + adjReplied + '  |  Closed Goal: ' + adjClosed + '\n' +
+    'Overall: ' + (overallPct != null ? overallPct.toFixed(1) + '%' : 'N/A') + '\n' +
+    'Status: ' + status
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Reads the original goal value stored in a cell note by the
+// weekly import (format: "Original: 67").
+// Returns null if the note is absent or unparseable.
+// ─────────────────────────────────────────────────────────────
+function _kpiParseOriginalNote_(note) {
+  const m = String(note || '').match(/Original:\s*([\d.]+)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Parses a supervisor's Goal Adj entry and returns adjusted
+// Replied and Closed goals.
+//
+//   "75"  → 75 % of base goals
+//   "-10" → subtract 10 from both goals (floor 0)
+//
+// Returns null for anything that doesn't match either format.
+// ─────────────────────────────────────────────────────────────
+function _kpiParseGoalAdj_(adjRaw, baseReplied, baseClosed) {
+  // Raw reduction: leading minus sign
+  const negMatch = adjRaw.match(/^-(\d+(?:\.\d+)?)$/);
+  if (negMatch) {
+    const n = parseFloat(negMatch[1]);
+    return {
+      replied: Math.max(0, Math.round(baseReplied - n)),
+      closed:  Math.max(0, Math.round(baseClosed  - n))
+    };
+  }
+  // Percentage: plain number 0–100
+  const pct = parseFloat(adjRaw);
+  if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+    return {
+      replied: Math.round(baseReplied * pct / 100),
+      closed:  Math.round(baseClosed  * pct / 100)
+    };
+  }
+  return null;
 }

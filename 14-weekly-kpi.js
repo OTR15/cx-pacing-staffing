@@ -4,6 +4,46 @@
 // KPI dashboard, without needing to call the other Apps Script project.
 // =============================================================================
 
+// ── Weekly snapshot column positions (1-based) ────────────────────────────────
+const WKPI_COL_AGENT        = 1;
+const WKPI_COL_QA_SCORE     = 2;
+const WKPI_COL_QA_GOAL      = 3;
+const WKPI_COL_REPLIED      = 4;
+const WKPI_COL_REPLIED_GOAL = 5;
+const WKPI_COL_CLOSED       = 6;
+const WKPI_COL_CLOSED_GOAL  = 7;
+const WKPI_COL_CSAT         = 8;
+const WKPI_COL_OVERALL      = 9;
+const WKPI_COL_STATUS       = 10;
+const WKPI_COL_NOTE         = 11;
+const WKPI_COL_REASON       = 12;
+const WKPI_COL_GOAL_ADJ     = 13;
+const WKPI_TOTAL_COLS       = 13;
+
+// Row offsets within the snapshot table (relative to tableStartRow).
+const WKPI_OFFSET_TITLE    = 0; // merged title bar
+const WKPI_OFFSET_INSTRUCT = 1; // supervisor instructions
+const WKPI_OFFSET_HEADERS  = 2; // column headers
+const WKPI_DATA_OFFSET     = 3; // first agent data row
+
+const WKPI_REASON_OPTIONS = [
+  'Project', 'Training', 'Cross-Train', 'Tech Issue', 'Meeting',
+  'Admin Work', 'Accommodation', 'Leave Ramp', 'Partial Day', 'Exempt'
+];
+
+// ── Meeting time deduction ────────────────────────────────────────────────────
+// Returns the fraction of productive time remaining after standing meetings.
+// Reads MEETING_HUDDLE_MIN_PER_DAY and MEETING_ONE_ON_ONE_MIN_PER_WEEK from
+// the KPI Report Card CONFIG sheet (defaults: 15 min/day huddle, 30 min/wk 1:1).
+function _weeklyKpiMeetingRatio_(cfg) {
+  const huddleMin   = parseFloat(cfg.MEETING_HUDDLE_MIN_PER_DAY     || 15);
+  const oneOnOneMin = parseFloat(cfg.MEETING_ONE_ON_ONE_MIN_PER_WEEK || 30);
+  const shiftMin    = parseFloat(cfg.STANDARD_SHIFT_MIN              || 480);
+  const weeklyShift    = shiftMin * 5;
+  const weeklyMeetings = (huddleMin * 5) + oneOnOneMin;
+  return Math.max(0, (weeklyShift - weeklyMeetings) / weeklyShift);
+}
+
 function weeklyKpiParseLocalDate_(value) {
   if (value instanceof Date) {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -399,8 +439,13 @@ function weeklyKpiCalcAgentScore_(agentName, csatMap, qaMap, pacMap, nameMap, cf
   const globalGoalReplied = parseFloat(cfg.GOAL_TICKETS_REPLIED) || 70;
   const globalGoalClosed = parseFloat(cfg.GOAL_CLOSED) || 53;
   const pacAgent = pacMap[agentName];
-  const goalReplied = pacAgent && pacAgent.goalReplied != null ? pacAgent.goalReplied : globalGoalReplied;
-  const goalClosed = pacAgent && pacAgent.goalClosed != null ? pacAgent.goalClosed : globalGoalClosed;
+  const rawGoalReplied = pacAgent && pacAgent.goalReplied != null ? pacAgent.goalReplied : globalGoalReplied;
+  const rawGoalClosed  = pacAgent && pacAgent.goalClosed  != null ? pacAgent.goalClosed  : globalGoalClosed;
+
+  // Bake in standing meeting time (daily huddles + weekly 1:1).
+  const meetingRatio = _weeklyKpiMeetingRatio_(cfg);
+  const goalReplied  = Math.round(rawGoalReplied * meetingRatio);
+  const goalClosed   = Math.round(rawGoalClosed  * meetingRatio);
 
   const wQa = parseFloat(cfg.WEIGHT_QA) || 40;
   const wTix = parseFloat(cfg.WEIGHT_TICKETS) || 20;
@@ -409,6 +454,7 @@ function weeklyKpiCalcAgentScore_(agentName, csatMap, qaMap, pacMap, nameMap, cf
 
   const afQa = parseFloat(cfg.AUTOFAIL_QA_THRESHOLD) || 74;
   const globalAfTix = parseFloat(cfg.AUTOFAIL_TICKETS_THRESHOLD) || 40;
+  // Scale autofail threshold by the same ratio so it stays proportional.
   const afTix = globalGoalReplied > 0
     ? Math.round(globalAfTix * (goalReplied / globalGoalReplied))
     : globalAfTix;
@@ -586,33 +632,161 @@ function writeWeeklyKpiSnapshotSection_(sh, snapshot, monday, sunday) {
   const title = 'KPI Admin Snapshot: ' +
     Utilities.formatDate(monday, CFG.timezone, 'M/d/yy') +
     ' - ' +
-    Utilities.formatDate(sunday, CFG.timezone, 'M/d/yy');
+    Utilities.formatDate(sunday, CFG.timezone, 'M/d/yy') +
+    '  ·  Goals include meeting deduction (huddles + 1:1)';
 
-  sh.getRange(startRow, 1, 1, 11).merge()
+  sh.getRange(startRow + WKPI_OFFSET_TITLE, 1, 1, WKPI_TOTAL_COLS).merge()
     .setValue(title)
     .setFontWeight('bold')
     .setHorizontalAlignment('center')
     .setBackground('#d9ead3');
 
+  // ── Supervisor instructions row ───────────────────────────────
+  sh.getRange(startRow + WKPI_OFFSET_INSTRUCT, 1, 1, WKPI_TOTAL_COLS).merge()
+    .setValue(
+      'To adjust a goal: (1) Pick a Reason from the dropdown in col L  ' +
+      '(2) Enter Goal Adj in col M — "75" = 75% of goal, "-10" = subtract 10 tickets  ' +
+      '(3) Run KPI Supervisor View → Re-score Weekly Row.  ' +
+      'Adjustments are preserved when the tab is rebuilt.'
+    )
+    .setFontStyle('italic')
+    .setFontSize(9)
+    .setFontColor('#555555')
+    .setBackground('#f8f9fa')
+    .setHorizontalAlignment('left')
+    .setWrap(false);
+
+  // ── Column headers ────────────────────────────────────────────
   const headers = [[
     'Agent', 'QA Score', 'QA Goal', 'Tickets Replied', 'Replied Goal',
-    'Closed Tickets', 'Closed Goal', 'CSAT', 'Overall %', 'Status', 'Note'
+    'Closed Tickets', 'Closed Goal', 'CSAT', 'Overall %', 'Status', 'Note',
+    'Reason', 'Goal Adj'
   ]];
 
-  sh.getRange(startRow + 1, 1, 1, headers[0].length)
+  sh.getRange(startRow + WKPI_OFFSET_HEADERS, 1, 1, WKPI_TOTAL_COLS)
     .setValues(headers)
     .setFontWeight('bold')
     .setBackground('#cfe2f3');
 
   if (!snapshot.rows.length) return;
 
-  sh.getRange(startRow + 2, 1, snapshot.rows.length, headers[0].length).setValues(snapshot.rows);
+  const dataStart = startRow + WKPI_DATA_OFFSET;
+
+  // Write the 11 data columns; Reason and Goal Adj start empty for supervisor.
+  sh.getRange(dataStart, 1, snapshot.rows.length, 11).setValues(snapshot.rows);
+
   snapshot.backgrounds.forEach((background, index) => {
-    sh.getRange(startRow + 2 + index, 1, 1, headers[0].length).setBackground(background);
+    sh.getRange(dataStart + index, 1, 1, WKPI_TOTAL_COLS).setBackground(background);
   });
 
-  sh.getRange(startRow + 2, 2, snapshot.rows.length, 2).setNumberFormat('0.0"%"');
-  sh.getRange(startRow + 2, 4, snapshot.rows.length, 4).setNumberFormat('0.0');
-  sh.getRange(startRow + 2, 8, snapshot.rows.length, 2).setNumberFormat('0.0');
-  sh.getRange(startRow + 2, 9, snapshot.rows.length, 1).setNumberFormat('0.0"%"');
+  // Store meeting-adjusted goals in cell notes so Re-score always works
+  // from the original import value, not a previously-adjusted one.
+  snapshot.rows.forEach((row, index) => {
+    const dataRow     = dataStart + index;
+    const repliedGoal = row[WKPI_COL_REPLIED_GOAL - 1];
+    const closedGoal  = row[WKPI_COL_CLOSED_GOAL  - 1];
+    if (repliedGoal != null && !isNaN(repliedGoal)) {
+      sh.getRange(dataRow, WKPI_COL_REPLIED_GOAL).setNote('Original: ' + repliedGoal);
+    }
+    if (closedGoal != null && !isNaN(closedGoal)) {
+      sh.getRange(dataRow, WKPI_COL_CLOSED_GOAL).setNote('Original: ' + closedGoal);
+    }
+  });
+
+  // Number formatting.
+  sh.getRange(dataStart, 2, snapshot.rows.length, 2).setNumberFormat('0.0"%"');
+  sh.getRange(dataStart, 4, snapshot.rows.length, 4).setNumberFormat('0.0');
+  sh.getRange(dataStart, 8, snapshot.rows.length, 2).setNumberFormat('0.0');
+  sh.getRange(dataStart, 9, snapshot.rows.length, 1).setNumberFormat('0.0"%"');
+
+  // Reason column: dropdown + soft yellow fill to signal "input here".
+  const reasonValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(WKPI_REASON_OPTIONS, true)
+    .setAllowInvalid(true)
+    .build();
+  sh.getRange(dataStart, WKPI_COL_REASON, snapshot.rows.length, 1)
+    .setDataValidation(reasonValidation)
+    .setBackground('#fefbd8');
+
+  // Goal Adj column: light yellow fill, plain text.
+  sh.getRange(dataStart, WKPI_COL_GOAL_ADJ, snapshot.rows.length, 1)
+    .setBackground('#fefbd8')
+    .setNumberFormat('@STRING@');
+}
+
+// ── Adjustment persistence ─────────────────────────────────────────────────────
+
+// Reads any supervisor adjustments already entered in the KPI snapshot table.
+// Returns a map of { agentName → { reason, goalAdj, adjReplied, adjClosed,
+//   overallPct, status, note } } for rows that have a Reason filled in.
+function readWeeklyKpiAdjustments_(sh) {
+  const dataStart = CFG.weekly.kpiSnapshot.tableStartRow + WKPI_DATA_OFFSET;
+  const lastRow   = sh.getLastRow();
+  if (lastRow < dataStart) return {};
+
+  const numRows = lastRow - dataStart + 1;
+  const data    = sh.getRange(dataStart, 1, numRows, WKPI_TOTAL_COLS).getValues();
+  const saved   = {};
+
+  data.forEach(row => {
+    const agent  = String(row[WKPI_COL_AGENT   - 1] || '').trim();
+    const reason = String(row[WKPI_COL_REASON  - 1] || '').trim();
+    if (!agent || !reason) return;
+
+    saved[agent] = {
+      reason:     reason,
+      goalAdj:    String(row[WKPI_COL_GOAL_ADJ    - 1] || ''),
+      adjReplied: row[WKPI_COL_REPLIED_GOAL - 1],
+      adjClosed:  row[WKPI_COL_CLOSED_GOAL  - 1],
+      overallPct: row[WKPI_COL_OVERALL      - 1],
+      status:     String(row[WKPI_COL_STATUS - 1] || ''),
+      note:       String(row[WKPI_COL_NOTE   - 1] || '')
+    };
+  });
+
+  return saved;
+}
+
+// Re-applies saved adjustments after the tab has been rebuilt.
+// Matches agents by name and restores their adjusted goals, score, and labels.
+// Supervisors can then re-run "Re-score Weekly Row" if the underlying actuals
+// changed and they need a fresh score against the preserved goals.
+function reapplyWeeklyKpiAdjustments_(sh, saved) {
+  if (!Object.keys(saved).length) return;
+
+  const dataStart = CFG.weekly.kpiSnapshot.tableStartRow + WKPI_DATA_OFFSET;
+  const lastRow   = sh.getLastRow();
+  if (lastRow < dataStart) return;
+
+  const numRows   = lastRow - dataStart + 1;
+  const agentVals = sh.getRange(dataStart, WKPI_COL_AGENT, numRows, 1).getValues();
+
+  const bgMap = {
+    'Exceeding':   '#e6f4ea',
+    'Meeting':     '#e8f0fe',
+    'Close':       '#fef7e0',
+    'Not Meeting': '#fce8e6',
+    'AUTO-FAIL':   '#fce8e6',
+    'Exempt':      '#f1f3f4',
+    'No data':     '#ffffff'
+  };
+
+  agentVals.forEach((cell, index) => {
+    const agent = String(cell[0] || '').trim();
+    const adj   = saved[agent];
+    if (!adj) return;
+
+    const row = dataStart + index;
+    sh.getRange(row, WKPI_COL_REPLIED_GOAL).setValue(adj.adjReplied);
+    sh.getRange(row, WKPI_COL_CLOSED_GOAL).setValue(adj.adjClosed);
+    sh.getRange(row, WKPI_COL_OVERALL).setValue(adj.overallPct);
+    sh.getRange(row, WKPI_COL_STATUS).setValue(adj.status);
+    sh.getRange(row, WKPI_COL_NOTE).setValue(adj.note);
+    sh.getRange(row, WKPI_COL_REASON).setValue(adj.reason);
+    sh.getRange(row, WKPI_COL_GOAL_ADJ).setValue(adj.goalAdj);
+
+    const bg = bgMap[adj.status] || '#ffffff';
+    sh.getRange(row, 1, 1, WKPI_COL_NOTE).setBackground(bg);
+    sh.getRange(row, WKPI_COL_REASON, 1, 2).setBackground('#fefbd8');
+  });
 }

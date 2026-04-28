@@ -41,6 +41,10 @@ function buildWeeklyReportForWeek_(dateObj) {
   const tabName = getWeeklyTabName_(week.monday, week.sunday);
 
   let sh = ss.getSheetByName(tabName);
+
+  // Preserve any supervisor adjustments before clearing the sheet.
+  const savedAdjustments = sh ? readWeeklyKpiAdjustments_(sh) : {};
+
   if (!sh) {
     sh = ss.insertSheet(tabName);
   } else {
@@ -55,6 +59,7 @@ function buildWeeklyReportForWeek_(dateObj) {
   writeWeeklyRepTable_(sh, weekData);
   writeWeeklyDailyMovementSection_(sh, weekData);
   writeWeeklyKpiSnapshotSection_(sh, kpiSnapshot, week.monday, week.sunday);
+  reapplyWeeklyKpiAdjustments_(sh, savedAdjustments);
   writeWeeklyCharts_(sh, weekData, kpiSnapshot);
 
   sh.autoResizeColumns(1, Math.min(21, sh.getMaxColumns()));
@@ -386,16 +391,18 @@ function writeWeeklyCharts_(sh, weekData, kpiSnapshot) {
   );
 
   if (kpiSnapshot.chartRows.length) {
+    // Chart data source starts after the snapshot's Reason + Goal Adj columns (WKPI_TOTAL_COLS = 13).
+    const kpiChartDataCol = WKPI_TOTAL_COLS + 2; // col 15
     const chartDataRowCount = kpiSnapshot.chartRows.length + 1;
-    sh.getRange(snapshotStartRow + 1, 13, chartDataRowCount, 2).clearContent();
-    sh.getRange(snapshotStartRow + 1, 13, 1, 2).setValues([['Agent', 'Overall %']]);
-    sh.getRange(snapshotStartRow + 2, 13, kpiSnapshot.chartRows.length, 2).setValues(kpiSnapshot.chartRows);
-    sh.getRange(snapshotStartRow + 2, 14, kpiSnapshot.chartRows.length, 1).setNumberFormat('0.0"%"');
+    sh.getRange(snapshotStartRow + 1, kpiChartDataCol, chartDataRowCount, 2).clearContent();
+    sh.getRange(snapshotStartRow + 1, kpiChartDataCol, 1, 2).setValues([['Agent', 'Overall %']]);
+    sh.getRange(snapshotStartRow + 2, kpiChartDataCol, kpiSnapshot.chartRows.length, 2).setValues(kpiSnapshot.chartRows);
+    sh.getRange(snapshotStartRow + 2, kpiChartDataCol + 1, kpiSnapshot.chartRows.length, 1).setNumberFormat('0.0"%"');
 
     sh.insertChart(
       sh.newChart()
         .setChartType(Charts.ChartType.BAR)
-        .addRange(sh.getRange(snapshotStartRow + 1, 13, chartDataRowCount, 2))
+        .addRange(sh.getRange(snapshotStartRow + 1, kpiChartDataCol, chartDataRowCount, 2))
         .setPosition(CFG.weekly.kpiSnapshot.chartStartRow, chartStartCol, 0, 0)
         .setOption('title', 'Weekly KPI Overall % by Agent')
         .setOption('width', 720)
@@ -409,6 +416,9 @@ function writeWeeklyCharts_(sh, weekData, kpiSnapshot) {
 function clearWeeklyReportSheet_(sh) {
   sh.getCharts().forEach(chart => sh.removeChart(chart));
   sh.clear();
+  // sh.clear() does not clear data validation — remove it explicitly so
+  // stale validation rules don't persist across rebuilds.
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearDataValidations();
 }
 
 // ── Tab management ────────────────────────────────────────────────────────────

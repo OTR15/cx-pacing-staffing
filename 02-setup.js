@@ -8,46 +8,41 @@
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('Pacing Report');
 
-  menu.addSubMenu(
-    ui.createMenu('Pacing Report')
-      .addItem('Publish Current Checkpoint',  'publishCurrentCheckpoint')
-      .addItem('Rebuild Current Day',         'rebuildAndRepublishToday')
-      .addItem('Apply Goal Adjustments',      'applyGoalAdjustments')
-  );
+  ui.createMenu('Pacing Report')
+    .addItem('Publish Current Checkpoint', 'publishCurrentCheckpoint')
+    .addItem('Rebuild Current Day',        'rebuildAndRepublishToday')
+    .addItem('Apply Goal Adjustments',     'applyGoalAdjustments')
+    .addToUi();
 
-  menu.addSubMenu(
-    ui.createMenu('Supervisor View')
-      .addItem('Sort Active Tab by Manager',  'sortActiveDailySheetByManager')
-      .addItem('Filter Active Tab to Manager','filterActiveDailySheetByManager')
-      .addItem('Show All Managers',           'clearManagerFilterOnActiveDailySheet')
-  );
+  ui.createMenu('KPI Supervisor View')
+    .addItem('Sort Active Tab by Manager',   'sortActiveDailySheetByManager')
+    .addItem('Filter Active Tab to Manager', 'filterActiveDailySheetByManager')
+    .addItem('Show All Managers',            'clearManagerFilterOnActiveDailySheet')
+    .addSeparator()
+    .addItem('⚡ Apply Goal Adjustment',     'applyGoalAdjustment')
+    .addItem('📊 Re-score Weekly Row',       'applyWeeklyGoalAdjustment')
+    .addToUi();
 
-  menu.addSubMenu(
-    ui.createMenu('Admin')
-      .addItem('Show Admin Tabs',             'unhideUtilitySheets')
-      .addItem('Hide Admin Tabs',             'hideUtilitySheetsMenu_')
-      .addSeparator()
-      .addItem('Install Daily Triggers',      'installTriggers')
-      .addItem('Remove Daily Triggers',       'removePacingTriggers')
-      .addSeparator()
-      .addItem('Set Next Schedule Tab',       'promptSetNextScheduleTab')
-      .addItem('Normalize Schedule',          'normalizeCurrentWeekSchedule')
-      .addItem('Rebuild Weekly Tabs',         'rebuildAllWeeklyReports')
-      .addSeparator()
-      .addItem('Organize Tabs',               'organizeTabs')
-  );
+  ui.createMenu('Admin')
+    .addItem('Show Admin Tabs',         'unhideUtilitySheets')
+    .addItem('Hide Admin Tabs',         'hideUtilitySheetsMenu_')
+    .addSeparator()
+    .addItem('Install Daily Triggers',  'installTriggers')
+    .addItem('Remove Daily Triggers',   'removePacingTriggers')
+    .addSeparator()
+    .addItem('Set Next Schedule Tab',   'promptSetNextScheduleTab')
+    .addItem('Normalize Schedule',      'normalizeCurrentWeekSchedule')
+    .addItem('Rebuild Weekly Tabs',     'rebuildAllWeeklyReports')
+    .addSeparator()
+    .addItem('Organize Tabs',           'organizeTabs')
+    .addToUi();
 
-  menu.addSubMenu(
-    ui.createMenu('Help')
-      .addItem('Daily Use Guide',             'showDailyUseGuide')
-      .addItem('Setup Checklist',             'showSetupChecklist')
-      .addItem('Build Team Guide Tab',        'buildTeamGuideTab')
-  );
-  addKpiAdjustmentMenu(menu);
-
-  menu.addToUi();
+  ui.createMenu('Help')
+    .addItem('Daily Use Guide',      'showDailyUseGuide')
+    .addItem('Setup Checklist',      'showSetupChecklist')
+    .addItem('Build Team Guide Tab', 'buildTeamGuideTab')
+    .addToUi();
 }
 
 // ── Seed / first-run setup ────────────────────────────────────────────────────
