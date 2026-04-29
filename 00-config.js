@@ -17,6 +17,7 @@ const CFG = {
   configSheetName: 'Config',
   normalizedScheduleSheetName: 'Schedule_Normalized',
   teamGuideSheetName: 'Team Guide',
+  caseUseSummarySheetName: 'Case Use Summary',
 
   // ── Schedule layout (1-based column/row positions) ─────────────────────────
   schedule: {

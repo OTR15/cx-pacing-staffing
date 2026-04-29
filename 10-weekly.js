@@ -58,6 +58,7 @@ function buildWeeklyReportForWeek_(dateObj) {
   writeWeeklyDailyMovementSection_(sh, weekData);
   writeWeeklyKpiSnapshotSection_(sh, kpiSnapshot, week.monday, week.sunday);
   writeWeeklyCharts_(sh, weekData, kpiSnapshot);
+  buildTeamDashboard_(weekData, kpiSnapshot, week.monday, week.sunday);
 
   sh.autoResizeColumns(1, Math.min(21, sh.getMaxColumns()));
 }
