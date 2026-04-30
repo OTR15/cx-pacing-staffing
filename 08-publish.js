@@ -486,6 +486,21 @@ function applyGoalAdjustments() {
       csat:           goals.csat
     };
 
+    // Update the note column (Column AE) with the adjusted targets so reporting
+    // tools that read those values stay in sync with the new colors.
+    const cpKeyMatch = noteText.match(/\|\s*Targets\s+(\S+)/);
+    if (cpKeyMatch) {
+      const cpKey  = cpKeyMatch[1];
+      const cpData = CFG.checkpoints.find(c => c.key === cpKey);
+      const cpPct  = cpData ? cpData.percent : 1;
+      const newNote = noteText
+        .replace(/C:\s*[\d.]+/,    'C: '    + round1_(adjustedGoals.closedTickets  * cpPct))
+        .replace(/R:\s*[\d.]+/,    'R: '    + round1_(adjustedGoals.ticketsReplied * cpPct))
+        .replace(/M:\s*[\d.]+/,    'M: '    + round1_(adjustedGoals.messagesSent   * cpPct))
+        .replace(/CSAT:\s*[\d.]+/, 'CSAT:'  + adjustedGoals.csat);
+      sheet.getRange(row, layout.notesCol).setValue(newNote);
+    }
+
     // Repaint every checkpoint that already has data written
     layout.sections.forEach(section => {
       const vals = sheet.getRange(row, section.startCol, 1, 4).getValues()[0];

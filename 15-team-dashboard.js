@@ -61,9 +61,8 @@ const TD_TCPH_PCT     = 14; // % of goal — chart series
 const TD_TRPH_PCT     = 15;
 const TD_QA_PCT       = 16;
 const TD_CSAT_PCT     = 17;
-const TD_QA_LEAD_PCT      = 18; // QA Lead completed/target %
-const TD_MEGHAN_QA_PCT    = 19; // Meghan individual QA % of goal
-const TD_TOTAL            = 19;
+const TD_QA_LEAD_PCT  = 18; // QA Lead completed/target %
+const TD_TOTAL        = 18;
 
 // ── Pulse Log constants ───────────────────────────────────────────────────────
 const DASH_PULSE_COL      = 10; // Column J — first column of pulse table
@@ -118,18 +117,18 @@ function buildTeamDashboard_(weekData, kpiSnapshot, monday, sunday) {
   sh.setTabColor(DASH_TAB_COLOR);
 
   // Compute all metrics
-  const goals         = getTeamDashboardGoals_();
-  const teamMetrics   = computeTeamMetrics_(weekData, kpiSnapshot, qaLeadName);
-  const kpiStats      = computeKpiReportCardStats_(kpiSnapshot, qaLeadName);
-  const meghanQaPct   = computeMeghanQaPct_(kpiSnapshot);
-  const qaStats       = collectQALeadWeeklyStats_(monday);
+  const goals       = getTeamDashboardGoals_();
+  const teamMetrics = computeTeamMetrics_(weekData, kpiSnapshot, qaLeadName);
+  const kpiStats    = computeKpiReportCardStats_(kpiSnapshot, qaLeadName);
+  const qaStats     = collectQALeadWeeklyStats_(monday);
   const pulseData     = collectPulseLogData_(monday);
   const trendData     = readTrendData_(sh);
   const wowMetrics    = computeWoWMetrics_(weekData.previousWeek, trendData, goals);
 
-  // Clear content rows only — trend data (row 48+) and chart (overlay) are preserved
+  // Clear through trend header rows so stale merges are fully broken before rewrite.
+  // Trend data (row 48+) and chart overlay are preserved.
   if (!isNew) {
-    sh.getRange(1, 1, DASH_R_CHART_END, sh.getMaxColumns())
+    sh.getRange(1, 1, DASH_R_TREND_COLS, sh.getMaxColumns())
       .clearContent()
       .clearFormat();
   }
@@ -145,14 +144,11 @@ function buildTeamDashboard_(weekData, kpiSnapshot, monday, sunday) {
 
   // Upsert current week's row in the trend table
   const weekLabel = dashWeekLabel_(monday, sunday);
-  upsertTrendRow_(sh, weekLabel, teamMetrics, kpiStats, qaStats, goals, trendData, meghanQaPct);
+  upsertTrendRow_(sh, weekLabel, teamMetrics, kpiStats, qaStats, goals, trendData);
 
-  // Build chart on first creation or rebuild if it's missing the Meghan series
-  const existingCharts = sh.getCharts();
-  if (existingCharts.length === 0 || existingCharts[0].getRanges().length < 7) {
-    existingCharts.forEach(c => sh.removeChart(c));
-    buildDashboardChart_(sh);
-  }
+  // Always rebuild the chart so series colors/labels stay in sync with code
+  sh.getCharts().forEach(c => sh.removeChart(c));
+  buildDashboardChart_(sh);
 
   SpreadsheetApp.flush();
 }
@@ -234,20 +230,6 @@ function computeKpiReportCardStats_(kpiSnapshot, qaLeadName) {
   const avgExcl = exclPcts.length ? exclPcts.reduce((a, b)  => a + b) / exclPcts.length : 0;
 
   return { avg, avgExcl, counts, autoFails, totalAgents: rows.length };
-}
-
-// =============================================================================
-// Meghan individual QA % of goal
-// =============================================================================
-
-function computeMeghanQaPct_(kpiSnapshot) {
-  const row = kpiSnapshot.rows.find(r =>
-    normalizeFirstName_(String(r[WKPI_COL_AGENT - 1] || '')) === 'meghan'
-  );
-  if (!row) return '';
-  const score = Number(row[WKPI_COL_QA_SCORE - 1]);
-  const goal  = Number(row[WKPI_COL_QA_GOAL  - 1]);
-  return (score > 0 && goal > 0) ? dashRound_(score / goal * 100) : '';
 }
 
 // =============================================================================
@@ -399,7 +381,7 @@ function readTrendData_(sh) {
   return { rows };
 }
 
-function upsertTrendRow_(sh, weekLabel, teamMetrics, kpiStats, qaStats, goals, trendData, meghanQaPct) {
+function upsertTrendRow_(sh, weekLabel, teamMetrics, kpiStats, qaStats, goals, trendData) {
   const { tcph, trph, qa, csat } = teamMetrics;
   const safePct = (actual, goal) => goal > 0 ? dashRound_(actual / goal * 100) : 0;
 
@@ -422,8 +404,7 @@ function upsertTrendRow_(sh, weekLabel, teamMetrics, kpiStats, qaStats, goals, t
     safePct(qa,   goals.qa),
     safePct(csat, goals.csat),
     (qaStats.completed !== null && qaStats.target > 0)
-      ? dashRound_(qaStats.completed / qaStats.target * 100) : '',
-    meghanQaPct !== undefined ? meghanQaPct : ''
+      ? dashRound_(qaStats.completed / qaStats.target * 100) : ''
   ];
 
   const existing = trendData.rows.findIndex(r => String(r[0] || '').trim() === weekLabel);
@@ -645,8 +626,7 @@ function writeTrendSectionHeaders_(sh) {
     'Overall % (all)', 'Overall % (excl auto-fails)',
     'QA Forms', 'QA Target',
     'TCPH Goal', 'TRPH Goal', 'QA Goal', 'CSAT Goal',
-    'TCPH % Goal', 'TRPH % Goal', 'QA % Goal', 'CSAT % Goal', 'QA Lead % Goal',
-    'Meghan QA % Goal'
+    'TCPH % Goal', 'TRPH % Goal', 'QA % Goal', 'CSAT % Goal', 'QA Lead % Goal'
   ]]).setFontWeight('bold').setBackground(DASH_C_GRAY_LIGHT);
 }
 
@@ -659,14 +639,13 @@ function buildDashboardChart_(sh) {
   const headerRow = DASH_R_TREND_COLS;
   const dataRows  = maxRows + 1; // header + data
 
-  // Chart uses: Week label (col 1) + five % of goal series (cols 14-18) + Meghan QA (col 19)
-  const weekRange      = sh.getRange(headerRow, TD_WEEK,           dataRows, 1);
-  const tcphRange      = sh.getRange(headerRow, TD_TCPH_PCT,       dataRows, 1);
-  const trphRange      = sh.getRange(headerRow, TD_TRPH_PCT,       dataRows, 1);
-  const qaRange        = sh.getRange(headerRow, TD_QA_PCT,         dataRows, 1);
-  const csatRange      = sh.getRange(headerRow, TD_CSAT_PCT,       dataRows, 1);
-  const qaLeadRange    = sh.getRange(headerRow, TD_QA_LEAD_PCT,    dataRows, 1);
-  const meghanQaRange  = sh.getRange(headerRow, TD_MEGHAN_QA_PCT,  dataRows, 1);
+  // Chart uses: Week label (col 1) + five % of goal series (cols 14-18)
+  const weekRange   = sh.getRange(headerRow, TD_WEEK,        dataRows, 1);
+  const tcphRange   = sh.getRange(headerRow, TD_TCPH_PCT,    dataRows, 1);
+  const trphRange   = sh.getRange(headerRow, TD_TRPH_PCT,    dataRows, 1);
+  const qaRange     = sh.getRange(headerRow, TD_QA_PCT,      dataRows, 1);
+  const csatRange   = sh.getRange(headerRow, TD_CSAT_PCT,    dataRows, 1);
+  const qaLeadRange = sh.getRange(headerRow, TD_QA_LEAD_PCT, dataRows, 1);
 
   const chart = sh.newChart()
     .setChartType(Charts.ChartType.LINE)
@@ -676,20 +655,17 @@ function buildDashboardChart_(sh) {
     .addRange(qaRange)
     .addRange(csatRange)
     .addRange(qaLeadRange)
-    .addRange(meghanQaRange)
     .setOption('title', 'Team Performance Trend (% of Goal)')
     .setOption('width',  700)
     .setOption('height', 360)
     .setOption('legend', { position: 'bottom' })
+    .setOption('colors', ['#4285F4', '#EA4335', '#34A853', '#FBBC04', '#7b4f9e'])
     .setOption('series', {
-      0: { color: '#4285F4', lineWidth: 2, labelInLegend: 'TCPH'        },
-      1: { color: '#EA4335', lineWidth: 2, labelInLegend: 'TRPH'        },
-      2: { color: '#34A853', lineWidth: 2, labelInLegend: 'QA Avg'      },
-      3: { color: '#FBBC04', lineWidth: 2, labelInLegend: 'CSAT'        },
-      4: { color: '#7b4f9e', lineWidth: 2, labelInLegend: 'QA Lead',
-           lineDashStyle: [4, 4] },
-      5: { color: '#FF6D00', lineWidth: 2, labelInLegend: 'Meghan QA',
-           lineDashStyle: [2, 2] }
+      0: { lineWidth: 2, labelInLegend: 'TCPH'      },
+      1: { lineWidth: 2, labelInLegend: 'TRPH'      },
+      2: { lineWidth: 2, labelInLegend: 'QA Avg'    },
+      3: { lineWidth: 2, labelInLegend: 'CSAT'      },
+      4: { lineWidth: 2, labelInLegend: 'Meghan QA', lineDashStyle: [4, 4] }
     })
     .setOption('hAxis', { slantedText: true, slantedTextAngle: 45 })
     .setOption('vAxis', { title: '% of Goal', format: '0"%"', viewWindow: { min: 50 } })
