@@ -484,11 +484,10 @@ function weeklyKpiCalcAgentScore_(agentName, csatMap, qaMap, pacMap, nameMap, cf
     }
   });
 
-  let overallPct = totalWeight > 0 ? (weightedSum / totalWeight) * 100 : null;
+  const overallPct = totalWeight > 0 ? (weightedSum / totalWeight) * 100 : null;
   const autoFail =
     (qa != null && qa <= afQa) ||
     (replied != null && replied < afTix);
-  if (autoFail) overallPct = 0;
 
   return {
     qa, replied, closed, csat,

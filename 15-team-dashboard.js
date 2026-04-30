@@ -209,7 +209,6 @@ function computeKpiReportCardStats_(kpiSnapshot, qaLeadName) {
   const counts    = { Exceeding: 0, Meeting: 0, Close: 0, 'Not Meeting': 0, 'AUTO-FAIL': 0 };
   const autoFails = [];
   const allPcts   = [];
-  const exclPcts  = [];
 
   rows.forEach(row => {
     const name    = String(row[WKPI_COL_AGENT   - 1] || '').trim();
@@ -217,19 +216,20 @@ function computeKpiReportCardStats_(kpiSnapshot, qaLeadName) {
     const status  = String(row[WKPI_COL_STATUS   - 1] || '').trim();
 
     if (status in counts) counts[status]++;
-    if (!isNaN(overall) && overall > 0) allPcts.push(overall);
 
     if (status === 'AUTO-FAIL') {
       autoFails.push(name);
-    } else if (!isNaN(overall) && overall > 0) {
-      exclPcts.push(overall);
+    }
+
+    // Include all agents with a real score; exclude Exempt and No data.
+    if (status !== 'Exempt' && status !== 'No data' && !isNaN(overall)) {
+      allPcts.push(overall);
     }
   });
 
-  const avg     = allPcts.length  ? allPcts.reduce((a, b)   => a + b) / allPcts.length  : 0;
-  const avgExcl = exclPcts.length ? exclPcts.reduce((a, b)  => a + b) / exclPcts.length : 0;
+  const avg = allPcts.length ? allPcts.reduce((a, b) => a + b) / allPcts.length : 0;
 
-  return { avg, avgExcl, counts, autoFails, totalAgents: rows.length };
+  return { avg, counts, autoFails, totalAgents: rows.length };
 }
 
 // =============================================================================
@@ -392,7 +392,7 @@ function upsertTrendRow_(sh, weekLabel, teamMetrics, kpiStats, qaStats, goals, t
     dashRound_(qa),
     dashRound_(csat),
     dashRound_(kpiStats.avg),
-    dashRound_(kpiStats.avgExcl),
+    dashRound_(kpiStats.avg),
     qaStats.completed !== null ? qaStats.completed : '',
     qaStats.target,
     dashRound_(goals.tcph),
@@ -476,7 +476,7 @@ function writeDashTeamPerformance_(sh, teamMetrics, goals) {
 }
 
 function writeDashKpiReportCard_(sh, kpiStats) {
-  const { avg, avgExcl, counts, autoFails, totalAgents } = kpiStats;
+  const { avg, counts, autoFails, totalAgents } = kpiStats;
   const green  = Number(getConfigValue_('PACING_GREEN_MIN',  1.0));
   const yellow = Number(getConfigValue_('PACING_YELLOW_MIN', 0.9));
   const scaledGreen  = green  * 85; // treat 85% as "meeting" baseline for overall %
@@ -488,16 +488,12 @@ function writeDashKpiReportCard_(sh, kpiStats) {
     .setBackground(DASH_C_BLUE).setFontColor(DASH_C_WHITE)
     .setFontWeight('bold').setHorizontalAlignment('left');
 
-  // Two averages side by side
-  const avgBg     = avg     >= scaledGreen ? DASH_C_GREEN : avg     >= scaledYellow ? DASH_C_YELLOW : DASH_C_RED;
-  const avgExclBg = avgExcl >= scaledGreen ? DASH_C_GREEN : avgExcl >= scaledYellow ? DASH_C_YELLOW : DASH_C_RED;
+  const avgBg = avg >= scaledGreen ? DASH_C_GREEN : avg >= scaledYellow ? DASH_C_YELLOW : DASH_C_RED;
 
   sh.getRange(DASH_R_KPI_AVGS, 1, 1, 6).setValues([[
-    'Overall Avg (all)', dashRound_(avg) + '%', '',
-    'Overall Avg (excl. auto-fails)', dashRound_(avgExcl) + '%', ''
+    'Overall Avg', dashRound_(avg) + '%', '', '', '', ''
   ]]);
   sh.getRange(DASH_R_KPI_AVGS, 2).setBackground(avgBg).setFontWeight('bold').setHorizontalAlignment('center');
-  sh.getRange(DASH_R_KPI_AVGS, 5).setBackground(avgExclBg).setFontWeight('bold').setHorizontalAlignment('center');
 
   // Status distribution
   sh.getRange(DASH_R_KPI_DIST, 1, 1, 6).merge()
@@ -533,7 +529,7 @@ function writeDashWoW_(sh, teamMetrics, kpiStats, wowMetrics) {
     trph:    teamMetrics.trph,
     qa:      teamMetrics.qa,
     csat:    teamMetrics.csat,
-    overall: kpiStats.avgExcl
+    overall: kpiStats.avg
   };
 
   // Section header
@@ -623,7 +619,7 @@ function writeTrendSectionHeaders_(sh) {
 
   sh.getRange(DASH_R_TREND_COLS, 1, 1, TD_TOTAL).setValues([[
     'Week', 'TCPH', 'TRPH', 'QA Avg', 'CSAT',
-    'Overall % (all)', 'Overall % (excl auto-fails)',
+    'Overall %', '',
     'QA Forms', 'QA Target',
     'TCPH Goal', 'TRPH Goal', 'QA Goal', 'CSAT Goal',
     'TCPH % Goal', 'TRPH % Goal', 'QA % Goal', 'CSAT % Goal', 'QA Lead % Goal'

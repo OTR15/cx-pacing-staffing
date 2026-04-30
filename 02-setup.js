@@ -331,7 +331,7 @@ function buildCaseUseSummaryTab() {
   // Title
   sh.setRowHeight(r, 46);
   sh.getRange(r, 1, 1, 3).merge()
-    .setValue('Pacing Report  —  Data Summary')
+    .setValue('Pacing Report: Data Summary')
     .setBackground(NAVY).setFontColor(WHITE)
     .setFontSize(16).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
@@ -349,12 +349,12 @@ function buildCaseUseSummaryTab() {
 
   const about = [
     'The Pacing Report tracks how the CX team is performing against daily and weekly goals. ' +
-    'It pulls ticket data from Gorgias and cross-references the team schedule to account for ' +
-    'actual hours worked — so goals scale with each agent\'s shift rather than assuming ' +
+    'It pulls ticket data from Gorgias and cross-references the team schedule along with daily adjustments made by supervisors to account for ' +
+    'actual hours worked, so goals are custom to each agent\'s shift rather than assuming ' +
     'everyone works the same hours.',
 
     'Reports update automatically at six checkpoints throughout the day (7AM, 9AM, 11AM, 2PM, ' +
-    '6PM, and EOD). Each checkpoint shows how the team is tracking relative to where they should ' +
+    '6PM, and 8PM). Each checkpoint shows how the team is tracking relative to where they should ' +
     'be at that point in the day, with color-coded pacing for each metric.',
 
     'Weekly summaries roll up each agent\'s full week and surface it alongside quality scores ' +
@@ -391,7 +391,7 @@ function buildCaseUseSummaryTab() {
 
   [
     ['Gorgias',
-     'Closed tickets, replies, and CSAT scores for each agent — pulled via API at each daily checkpoint.'],
+     'Closed tickets, replies, and CSAT scores for each agent, pulled via API at each daily checkpoint.'],
     ['Team Schedule',
      'Shift hours and status (active, CTO, VTO, off). Used to calculate each agent\'s adjusted goal for the day. Agents on shorter shifts get proportionally smaller targets.'],
     ['QA Lead Report Card',
@@ -443,7 +443,10 @@ function buildCaseUseSummaryTab() {
      'Set per agent in the Goals tab (default: 4.7)'],
     ['Overall %',
      'The average of each agent\'s four metric scores measured against their individual goals. The primary number used for weekly KPI status.',
-     '—'],
+     'N/A'],
+    ['Auto-Fail',
+     'A status applied when an agent\'s QA score falls at or below the auto-fail threshold, or their weekly tickets replied falls below the minimum ticket threshold. The agent\'s actual scores are still calculated and included in the team-wide Overall Avg. Auto-fail is surfaced separately as a count and name list on the Team Dashboard.',
+     'QA score at or below 74%  ·  Tickets Replied below ~40% of weekly goal (scales with shift hours)'],
     ['Pacing Color',
      'Whether an agent is on track at a given checkpoint, based on the share of expected output at that point in the day.',
      'Green = on track  ·  Yellow = slightly behind  ·  Red = behind']
