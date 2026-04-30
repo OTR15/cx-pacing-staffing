@@ -133,6 +133,9 @@ function buildDailySheet_(sheet, dateObj) {
   // Notes column gets extra width
   sheet.setColumnWidth(layout.progressStartCol + 4, 240);
 
+  // "On a Project" column is unused — hide it while preserving column indices
+  sheet.hideColumns(layout.progressStartCol + 1);
+
   SpreadsheetApp.flush();
 }
 
@@ -245,7 +248,6 @@ function applyProgressValidation_(sheet, rowCount, progressStartCol) {
     .build();
 
   sheet.getRange(CFG.daily.firstDataRow, progressStartCol,     rowCount, 1).setDataValidation(yesNoExempt);
-  sheet.getRange(CFG.daily.firstDataRow, progressStartCol + 1, rowCount, 1).setDataValidation(project);
   sheet.getRange(CFG.daily.firstDataRow, progressStartCol + 2, rowCount, 1).setDataValidation(actions);
   sheet.getRange(CFG.daily.firstDataRow, progressStartCol + 3, rowCount, 1).setDataValidation(yesNoExempt);
 }

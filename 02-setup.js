@@ -220,92 +220,278 @@ function buildTeamGuideTab() {
   const ss = SpreadsheetApp.getActive();
   const sh = getOrCreateSheet_(ss, CFG.teamGuideSheetName);
   sh.clear();
+  sh.setTabColor('#2e7d32');
+  sh.setColumnWidth(1, 220);
+  sh.setColumnWidth(2, 530);
 
-  const rows = [
-    ['Gorgias Pacing Report — Team Guide'],
-    [''],
-    ['Purpose'],
-    ['This sheet tracks daily pacing for the team using Gorgias stats and the team schedule.'],
-    ['It creates a daily tab, adjusts goals by shift length, colors each metric, and marks reps as exempt when appropriate.'],
-    [''],
-    ['Main Features'],
-    ['• Daily tabs created automatically'],
-    ['• Checkpoints: 7 AM, 9 AM, 11 AM, 2 PM, 6 PM, EOD'],
-    ['• Metrics: Closed Tickets, Tickets Replied, Messages Sent, CSAT'],
-    ['• Shift-adjusted goals'],
-    ['• Lunch deduction rule'],
-    ['• Red / Yellow / Green metric coloring'],
-    ['• Off / CTO / VTO reps marked Exempt'],
-    ['• Last 7 daily tabs stay visible; older daily tabs auto-hide'],
-    [''],
-    ['Daily Use'],
-    ['1. Open today tab'],
-    ['2. Review metric colors and On Track column'],
-    ['3. If needed, use the Pacing Report menu to Normalize Schedule or Publish Current Checkpoint'],
-    [''],
-    ['Admin / Setup Menu'],
-    ['Setup: Seed Project → creates Config, Roster, Goals, Schedule_Normalized, and this guide'],
-    ['Setup: Show Admin Tabs → unhides helper tabs'],
-    ['Setup: Hide Admin Tabs → hides helper tabs'],
-    ['Run: Normalize Schedule → refreshes machine-readable schedule data'],
-    ['Run: Build Today Tab → rebuilds today tab'],
-    ['Run: Publish Current Checkpoint → fills the current time block only'],
-    ['Run: Publish Full Day Test → testing only, heavier API usage'],
-    ['Automation: Install Daily Triggers → installs daily automation'],
-    ['Automation: Remove Triggers → removes all pacing triggers'],
-    [''],
-    ['Onboarding / Offboarding'],
-    ['Roster changes do NOT require code changes.'],
-    ['To add someone: go to the Roster tab and add Agent ID + Agent Name on a new row.'],
-    ['To remove someone: delete their row from the Roster tab.'],
-    ['The script reads the Roster tab directly.'],
-    ['Important: the name should match how the rep appears in the schedule or be close enough for first-name matching.'],
-    [''],
-    ['Goals'],
-    ['Goals are editable in the Goals tab.'],
-    ['You can change team defaults and rep-specific overrides without editing code.'],
-    ['Checkpoint pacing percentages are also controlled in the Goals tab.'],
-    [''],
-    ['Schedule Source'],
-    ['The Schedule tab is the source of truth.'],
-    ['Recommended layout: names in column A, managers in column C, dates in row 2, daily shift values starting in column D.'],
-    ['You can manually update this tab weekly or use IMPORTRANGE from another spreadsheet.'],
-    ['IMPORTRANGE is recommended if the source schedule is stable and permissioned correctly.'],
-    [''],
-    ['Lunch / Effective Hours'],
-    ['By default, scheduled shifts of 9+ hours subtract 1 hour for lunch.'],
-    ['Examples: 9 scheduled = 8 effective, 11 scheduled = 10 effective.'],
-    ['This is controlled in the Config tab.'],
-    [''],
-    ['Color Logic'],
-    ['Each metric cell is colored separately.'],
-    ['Green = on target'],
-    ['Yellow = near target'],
-    ['Red = behind target'],
-    ['Default percent thresholds are controlled in Config.'],
-    [''],
-    ['Tab Visibility / Archiving'],
-    ['Daily tabs from the last 7 days remain visible by default.'],
-    ['Older daily tabs are automatically hidden each day.'],
-    ['This keeps the workbook clean without deleting history.'],
-    [''],
-    ['Triggers / Automation'],
-    ['Triggers run as the account that installs them.'],
-    ['The primary admin should install and own the triggers.'],
-    ['Once installed, most users do not need Apps Script access.'],
-    [''],
-    ['Troubleshooting'],
-    ['If today tab is wrong:'],
-    ['1. Run Normalize Schedule'],
-    ['2. Run Build Today Tab'],
-    ['3. Run Publish Current Checkpoint'],
-    ['If metrics are blank, confirm script properties and Roster IDs.'],
-    ['If reps are missing or Off incorrectly, check the Schedule tab and today date in row 2.']
-  ];
+  const GREEN_DARK  = '#1b5e20';
+  const GREEN_MID   = '#2e7d32';
+  const GREEN_LIGHT = '#e8f5e9';
+  const WHITE       = '#ffffff';
+  const INK         = '#212121';
 
-  sh.getRange(1, 1, rows.length, 1).setValues(rows);
-  sh.setColumnWidth(1, 700);
-  sh.getRange(1, 1).setFontSize(14).setFontWeight('bold');
+  let r = 1;
+
+  const title_ = (text) => {
+    sh.setRowHeight(r, 46);
+    sh.getRange(r, 1, 1, 2).merge()
+      .setValue(text)
+      .setBackground(GREEN_DARK).setFontColor(WHITE)
+      .setFontSize(16).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    r++;
+  };
+
+  const spacer_ = (h) => { sh.setRowHeight(r, h || 10); r++; };
+
+  const sectionHeader_ = (text) => {
+    sh.setRowHeight(r, 28);
+    sh.getRange(r, 1, 1, 2).merge()
+      .setValue(text)
+      .setBackground(GREEN_MID).setFontColor(WHITE)
+      .setFontSize(11).setFontWeight('bold').setVerticalAlignment('middle');
+    r++;
+  };
+
+  const prose_ = (text, h) => {
+    sh.setRowHeight(r, h || 52);
+    sh.getRange(r, 1, 1, 2).merge()
+      .setValue(text)
+      .setFontSize(10).setFontColor(INK).setBackground(WHITE)
+      .setWrap(true).setVerticalAlignment('middle');
+    r++;
+  };
+
+  const qa_ = (question, answer, h, even) => {
+    sh.setRowHeight(r, h || 48);
+    const bg = even ? GREEN_LIGHT : WHITE;
+    sh.getRange(r, 1)
+      .setValue(question)
+      .setFontWeight('bold').setFontSize(10).setFontColor(INK)
+      .setBackground(bg).setWrap(true).setVerticalAlignment('top');
+    sh.getRange(r, 2)
+      .setValue(answer)
+      .setFontSize(10).setFontColor(INK)
+      .setBackground(bg).setWrap(true).setVerticalAlignment('top');
+    r++;
+  };
+
+  const colHeader_ = (a, b) => {
+    sh.setRowHeight(r, 24);
+    sh.getRange(r, 1, 1, 2).setValues([[a, b]])
+      .setFontWeight('bold').setBackground(GREEN_LIGHT).setFontColor(INK)
+      .setVerticalAlignment('middle');
+    r++;
+  };
+
+  // ── Title ────────────────────────────────────────────────────────────────
+  title_('Pacing Report: Supervisor Guide');
+  spacer_();
+
+  // ── Overview ─────────────────────────────────────────────────────────────
+  prose_(
+    'This guide covers everything a supervisor needs to use the Pacing Report day-to-day. ' +
+    'The report pulls live ticket data from Gorgias, cross-references the team schedule, and ' +
+    'produces color-coded pacing for every agent at six checkpoints throughout the day. Goals ' +
+    'scale automatically to each agent\'s actual shift length, and supervisors can make same-day ' +
+    'adjustments when hours change.',
+    58
+  );
+  spacer_();
+
+  // ── Reading the Daily Tab ─────────────────────────────────────────────────
+  sectionHeader_('Reading the Daily Tab');
+  colHeader_('Topic', 'Detail');
+
+  qa_('Checkpoints',
+    '6 checkpoints fire automatically each day: 7AM, 9AM, 11AM, 2PM, 8PM (EOD). Each one pulls live Gorgias data for the team and fills in that time block.',
+    40, false);
+
+  qa_('Metric columns',
+    'Each checkpoint block has 4 columns: Closed Tickets, Tickets Replied, Messages Sent, CSAT. Each is colored independently.',
+    40, true);
+
+  qa_('Pacing colors',
+    'Green = on track for their goal at this point in the day.  Yellow = slightly behind.  Red = behind.  ' +
+    'The thresholds are set in the Config tab (default: green at 100%, yellow at 90%).',
+    48, false);
+
+  qa_('Exempt / CTO / VTO',
+    'Agents who are off, on full CTO, or full VTO have their metric cells cleared and painted a neutral color. ' +
+    'They are excluded from pacing calculations for the day.',
+    48, true);
+
+  qa_('Partial CTO / VTO',
+    'Agents who work part of the day and take CTO or VTO for the rest will show real metric data for the ' +
+    'checkpoints they were working, and a CTO/VTO color for checkpoints after they left.',
+    52, false);
+
+  qa_('On Track column',
+    'Auto-populated at each publish. Shows Yes, No, or Exempt based on whether the agent is meeting their checkpoint target across all metrics.',
+    44, true);
+
+  qa_('EOD Goal Met column',
+    'Auto-populated at the EOD checkpoint. Shows Yes, No, or Exempt. Reflects whether the agent hit their full-day goal after all adjustments are applied.',
+    44, false);
+
+  qa_('Actions Taken column',
+    'Auto-populated in certain situations — Working Lunch, CTO, VTO, Off. Supervisors do not need to fill this in manually.',
+    44, true);
+
+  qa_('Notes column (Column AE)',
+    'Written automatically at each publish. Contains the agent\'s schedule status, scheduled hours, effective hours after lunch deduction, and the target values for the last published checkpoint. ' +
+    'Reporting tools read this column — when a goal adjustment is applied, this column updates automatically.',
+    60, false);
+
+  spacer_();
+
+  // ── Goal Adjustments ─────────────────────────────────────────────────────
+  sectionHeader_('Goal Adjustments');
+  colHeader_('Topic', 'Detail');
+
+  qa_('What it does',
+    'When a supervisor removes hours from an agent\'s goal (CTO hours, a project block, etc.), the system recomputes that agent\'s targets and repaints all checkpoint colors accordingly. ' +
+    'The EOD Goal Met column also recalculates if EOD has already been published.',
+    56, false);
+
+  qa_('When to use it',
+    'Any time an agent\'s available hours for the day changed after the schedule was set — approved CTO, a mid-day project pull, unexcused absence, or a performance-related adjustment.',
+    52, true);
+
+  qa_('How to apply',
+    '1. Open the daily tab for the relevant date.\n' +
+    '2. Find the agent\'s row.\n' +
+    '3. Enter the number of hours to remove in the Hours Removed column.\n' +
+    '4. Select a reason from the Reason dropdown.\n' +
+    '5. Run Pacing Report → Apply Goal Adjustments from the menu.',
+    80, false);
+
+  qa_('Valid reasons',
+    'CTO  ·  VTO  ·  Unexcused Absence  ·  Project  ·  Performance',
+    36, true);
+
+  qa_('What updates',
+    'All checkpoint colors for that agent are repainted. EOD Goal Met recalculates (if EOD is published). ' +
+    'The Notes column (Column AE) updates with the new targets. The Status column shows "Applied" with the hours removed.',
+    56, false);
+
+  qa_('Can I adjust any agent?',
+    'Yes. Any agent on the roster can receive a goal adjustment regardless of their current pacing status.',
+    36, true);
+
+  spacer_();
+
+  // ── Weekly KPI ────────────────────────────────────────────────────────────
+  sectionHeader_('Weekly KPI');
+  colHeader_('Topic', 'Detail');
+
+  qa_('What it shows',
+    'Each agent\'s full-week performance across four metrics: QA Score, Tickets Replied, Closed Tickets, and CSAT. ' +
+    'An Overall % is calculated as a weighted average of all four. The weekly tab is generated by running Admin → Rebuild Weekly Tabs.',
+    64, false);
+
+  qa_('KPI statuses',
+    'Exceeding (106%+)  ·  Meeting (100-105%)  ·  Close (90-99%)  ·  Not Meeting (below 90%)  ·  Auto-Fail  ·  Exempt',
+    44, true);
+
+  qa_('Auto-Fail',
+    'Triggered when an agent\'s QA score is at or below 74%, or their weekly tickets replied falls below roughly 40% of their goal (scales with shift hours). ' +
+    'Auto-fail agents\' actual scores are still included in the team-wide Overall Average. Auto-fails are called out by name on the Team Dashboard.',
+    64, false);
+
+  qa_('Team Dashboard',
+    'A separate tab that shows team-level TCPH, TRPH, QA Avg, and CSAT; the Overall Avg; auto-fail names; ' +
+    'week-over-week deltas; QA Lead stats; and the inbox health snapshot from the Pulse Log. Built alongside the weekly tab.',
+    60, true);
+
+  spacer_();
+
+  // ── Menus ─────────────────────────────────────────────────────────────────
+  sectionHeader_('Menus');
+  colHeader_('Menu Item', 'What It Does');
+
+  qa_('Pacing Report → Publish Current Checkpoint',
+    'Pulls live Gorgias data and fills in the current time block for all agents. Runs automatically on a trigger — use this only if a checkpoint was missed or needs to be re-run.',
+    52, false);
+
+  qa_('Pacing Report → Rebuild Current Day',
+    'Deletes and recreates today\'s tab, then republishes all checkpoints that have already fired. Use this if the tab got into a bad state.',
+    48, true);
+
+  qa_('Pacing Report → Apply Goal Adjustments',
+    'Reads the Hours Removed and Reason columns on the active daily tab and repaints all checkpoint colors for affected agents. Must be run manually after entering adjustments.',
+    52, false);
+
+  qa_('KPI Supervisor View → Filter Active Tab to Manager',
+    'Hides all rows except agents belonging to the entered manager. Useful for per-manager reviews. Publish still works correctly when a filter is active.',
+    52, true);
+
+  qa_('KPI Supervisor View → Show All Managers',
+    'Clears the manager filter and makes all agent rows visible again.',
+    36, false);
+
+  qa_('KPI Supervisor View → Sort Active Tab by Manager',
+    'Sorts the active daily tab by manager, then by rep name within each manager group.',
+    40, true);
+
+  qa_('Mode → Internal / External',
+    'Internal shows the full tab set (Team Guide, 7 daily, 4 weekly, Staffing). ' +
+    'External trims to Case Use Summary, Team Dashboard, 3 daily, 1 weekly — use this when sharing the sheet with leadership.',
+    52, false);
+
+  qa_('Admin → Normalize Schedule',
+    'Reads the Schedule tab and rebuilds the internal Schedule_Normalized tab. Run this at the start of each week before the first publish.',
+    48, true);
+
+  qa_('Admin → Rebuild Weekly Tabs',
+    'Regenerates all weekly KPI tabs and the Team Dashboard. Run this at the end of each week.',
+    40, false);
+
+  spacer_();
+
+  // ── Roster ────────────────────────────────────────────────────────────────
+  sectionHeader_('Adding and Removing Agents');
+  colHeader_('Action', 'How');
+
+  qa_('Add an agent',
+    'Open the Roster tab (Admin → Show Admin Tabs to make it visible). Add a new row with the agent\'s Gorgias Agent ID and their name exactly as it appears in the schedule.',
+    52, false);
+
+  qa_('Remove an agent',
+    'Delete their row from the Roster tab. They will no longer appear on new daily tabs. Historical tabs are unaffected.',
+    44, true);
+
+  qa_('Name matching',
+    'The system matches agents between the schedule and Gorgias by name. The name in the Roster tab should match the schedule closely. First-name matching is used as a fallback.',
+    52, false);
+
+  spacer_();
+
+  // ── Troubleshooting ───────────────────────────────────────────────────────
+  sectionHeader_('Troubleshooting');
+  colHeader_('Issue', 'What to Do');
+
+  qa_('Today\'s tab has wrong data or wrong agents',
+    '1. Run Admin → Normalize Schedule.\n2. Run Pacing Report → Rebuild Current Day.\nThis recreates the tab and republishes all checkpoints that have fired so far today.',
+    56, false);
+
+  qa_('A checkpoint didn\'t fire',
+    'Run Pacing Report → Publish Current Checkpoint while still within that checkpoint\'s hour, or use Rebuild Current Day to catch up all missed checkpoints at once.',
+    52, true);
+
+  qa_('Agent shows as Unscheduled but should be working',
+    'Check the Schedule tab. Their name may not match the Roster tab closely enough, or their shift cell may be blank. Fix the schedule and run Normalize Schedule, then re-run the checkpoint.',
+    56, false);
+
+  qa_('Goal adjustment colors didn\'t update',
+    'Make sure you ran Pacing Report → Apply Goal Adjustments after entering the hours. Also confirm you are on the correct daily tab before running it.',
+    48, true);
+
+  qa_('Metrics show as blank',
+    'Confirm the agent\'s Gorgias Agent ID in the Roster tab is correct. A wrong ID means no data is returned from the API.',
+    44, false);
+
+  SpreadsheetApp.flush();
 }
 
 // ── Case Use Summary tab ──────────────────────────────────────────────────────
@@ -397,9 +583,9 @@ function buildCaseUseSummaryTab() {
     ['QA Lead Report Card',
      'Weekly QA form completion for the QA Lead, tracked in a separate spreadsheet and pulled automatically each time the weekly report is built.'],
     ['Pulse Log',
-     'End-of-day snapshots of inbox health: total open tickets, unassigned count, and a breakdown of how long tickets have been waiting (aging buckets from under 8 hours to over 24 hours).']
+     'End-of-day snapshots of inbox health: total open tickets, unassigned count, and a breakdown of how long tickets have been waiting (aging buckets from under 8 hours to over 24 hours).\n\nUse inbox data as context alongside KPIs. Low ticket output with a healthy inbox may indicate a well-managed workflow. High ticket output with an overloaded inbox may point to a staffing need. Low output and an overloaded inbox together is the most urgent signal. It might mean that volume is high and agents are not keeping up.']
   ].forEach(([source, desc], i) => {
-    sh.setRowHeight(r, 46);
+    sh.setRowHeight(r, i === 3 ? 110 : 46);
     const bg = i % 2 === 0 ? WHITE : NAVY_LIGHT;
     sh.getRange(r, 1).setValue(source)
       .setFontWeight('bold').setFontSize(10).setFontColor(INK)
